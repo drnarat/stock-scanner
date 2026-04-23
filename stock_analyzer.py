@@ -1,3 +1,4 @@
+"""
 ╔══════════════════════════════════════════════════════════════╗
 ║         AI Stock Scanner Pro — v3 Real-time Edition          ║
 ║  Settrade API + Deep Analysis + Mobile-first UI              ║
