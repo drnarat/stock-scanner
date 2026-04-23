@@ -6,1182 +6,941 @@ import random
 from datetime import datetime, timedelta
 
 # ============================================================
-# หมายเหตุ: ในการใช้งานจริง ให้ uncomment ส่วนนี้
-# from settrade_v2 import Investor
+# CONFIG
 # ============================================================
-
-# ============================================================
-# 1. CONFIGURATION
-# ============================================================
-APP_ID = "MPRZz1Hymo6nR50A"
+APP_ID     = "MPRZz1Hymo6nR50A"
 APP_SECRET = "Te/3LKXBb+IM20T/ygcFAMWXjIgkadJ+o1cDstkjRDQ="
-APP_CODE = "SANDBOX"
-BROKER_ID = "SANDBOX"
+APP_CODE   = "SANDBOX"
+BROKER_ID  = "SANDBOX"
+USE_MOCK   = True   # ← เปลี่ยนเป็น False เมื่อมี Settrade credential จริง
 
+# ============================================================
+# PAGE CONFIG — mobile-first
+# ============================================================
 st.set_page_config(
-    page_title="🚀 AI Stock Scanner Pro",
+    page_title="📈 Stock Scanner Pro",
     page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="centered",          # centered ดีกว่า wide สำหรับมือถือ
+    initial_sidebar_state="collapsed",
 )
 
 # ============================================================
-# 2. CUSTOM CSS
+# GLOBAL CSS — mobile-first design
 # ============================================================
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&family=Space+Grotesk:wght@400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body, [class*="css"] {
     font-family: 'Sarabun', sans-serif;
+    background: #0d0d14;
+    color: #e2e8f0;
 }
 
-.main-header {
-    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
-    padding: 2rem;
+/* ---- HEADER ---- */
+.app-header {
+    background: linear-gradient(135deg, #12122a 0%, #1a1035 50%, #0f1f3a 100%);
+    border: 1px solid rgba(108,99,255,0.3);
     border-radius: 16px;
+    padding: 18px 16px 14px;
     text-align: center;
-    margin-bottom: 1.5rem;
-    box-shadow: 0 8px 32px rgba(48, 43, 99, 0.4);
+    margin-bottom: 16px;
+    box-shadow: 0 4px 24px rgba(108,99,255,0.2);
+}
+.app-header h1 { font-size: 1.4rem; font-weight: 700; color: #fff; letter-spacing: -0.3px; }
+.app-header .sub { font-size: 0.75rem; color: #8892b0; margin-top: 4px; }
+.live-dot {
+    display: inline-block; width: 8px; height: 8px;
+    background: #00b894; border-radius: 50%;
+    margin-right: 5px;
+    animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+    0%,100% { opacity:1; transform:scale(1); }
+    50% { opacity:0.4; transform:scale(1.3); }
 }
 
-.main-header h1 {
-    color: #fff;
-    font-size: 2rem;
-    font-weight: 700;
-    margin: 0;
-    font-family: 'Space Grotesk', sans-serif;
-    letter-spacing: -0.5px;
+/* ---- MARKET SELECTOR CARDS ---- */
+.market-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 16px;
 }
-
-.main-header p {
-    color: #a8b2d8;
-    margin: 0.5rem 0 0 0;
-    font-size: 0.95rem;
-}
-
-.signal-buy {
-    background: linear-gradient(135deg, #0f9b58, #00b894);
-    color: white;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-weight: 700;
-    font-size: 0.8rem;
-    display: inline-block;
-}
-
-.signal-sell {
-    background: linear-gradient(135deg, #d63031, #e17055);
-    color: white;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-weight: 700;
-    font-size: 0.8rem;
-    display: inline-block;
-}
-
-.signal-neutral {
-    background: linear-gradient(135deg, #636e72, #b2bec3);
-    color: white;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-weight: 700;
-    font-size: 0.8rem;
-    display: inline-block;
-}
-
-.signal-watch {
-    background: linear-gradient(135deg, #e17055, #fdcb6e);
-    color: white;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-weight: 700;
-    font-size: 0.8rem;
-    display: inline-block;
-}
-
-.metric-card {
-    background: linear-gradient(135deg, #1a1a2e, #16213e);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 12px;
-    padding: 1.2rem;
+.market-card {
+    background: #1a1a2e;
+    border: 2px solid #2a2a4a;
+    border-radius: 14px;
+    padding: 14px 10px;
     text-align: center;
-    color: white;
-}
-
-.metric-card .value {
-    font-size: 1.6rem;
-    font-weight: 700;
-    font-family: 'Space Grotesk', sans-serif;
-}
-
-.metric-card .label {
-    font-size: 0.8rem;
-    color: #a8b2d8;
-    margin-top: 4px;
-}
-
-.score-badge {
-    display: inline-block;
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
-    line-height: 50px;
-    text-align: center;
-    font-weight: 700;
-    font-size: 1rem;
-    font-family: 'Space Grotesk', sans-serif;
-}
-
-.score-high { background: #00b894; color: white; }
-.score-med  { background: #fdcb6e; color: #2d3436; }
-.score-low  { background: #d63031; color: white; }
-
-.indicator-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 6px 0;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
-}
-
-.status-dot-green { color: #00b894; }
-.status-dot-red   { color: #d63031; }
-.status-dot-yellow{ color: #fdcb6e; }
-
-.stDataFrame table {
-    font-size: 0.85rem;
-}
-
-div[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0f0c29 0%, #1a1a2e 100%);
-}
-
-div[data-testid="stSidebar"] label,
-div[data-testid="stSidebar"] .stSelectbox label,
-div[data-testid="stSidebar"] h1,
-div[data-testid="stSidebar"] h2,
-div[data-testid="stSidebar"] h3,
-div[data-testid="stSidebar"] p,
-div[data-testid="stSidebar"] span {
-    color: #e2e8f0 !important;
-}
-
-.section-header {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: #a8b2d8;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin: 1rem 0 0.5rem 0;
-    padding-bottom: 0.3rem;
-    border-bottom: 2px solid rgba(168, 178, 216, 0.2);
-}
-
-.analysis-box {
-    background: linear-gradient(135deg, #1a1a2e, #16213e);
-    border-left: 4px solid #6c63ff;
-    border-radius: 0 12px 12px 0;
-    padding: 1rem 1.2rem;
-    margin: 0.5rem 0;
-    color: #e2e8f0;
-    font-size: 0.9rem;
-    line-height: 1.7;
-}
-
-.buy-reason { border-left-color: #00b894; }
-.sell-reason { border-left-color: #d63031; }
-.neutral-reason { border-left-color: #636e72; }
-
-.target-box {
-    background: rgba(108, 99, 255, 0.1);
-    border: 1px solid rgba(108, 99, 255, 0.3);
-    border-radius: 10px;
-    padding: 0.8rem 1rem;
-    text-align: center;
-    color: #e2e8f0;
-}
-
-.target-box .target-label {
-    font-size: 0.75rem;
-    color: #a8b2d8;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.target-box .target-value {
-    font-size: 1.2rem;
-    font-weight: 700;
-    font-family: 'Space Grotesk', sans-serif;
-    color: #6c63ff;
-    margin-top: 4px;
-}
-
-.stButton > button {
-    background: linear-gradient(135deg, #6c63ff, #302b63);
-    color: white;
-    border: none;
-    border-radius: 10px;
-    font-weight: 600;
-    font-family: 'Space Grotesk', sans-serif;
-    letter-spacing: 0.5px;
+    cursor: pointer;
     transition: all 0.2s;
-    box-shadow: 0 4px 15px rgba(108, 99, 255, 0.3);
+}
+.market-card:active { transform: scale(0.96); }
+.market-card.selected {
+    border-color: #6c63ff;
+    background: linear-gradient(135deg, #1e1b4b, #1a1a3a);
+    box-shadow: 0 0 16px rgba(108,99,255,0.35);
+}
+.market-card .flag { font-size: 1.8rem; display: block; margin-bottom: 4px; }
+.market-card .mname { font-size: 0.8rem; font-weight: 600; color: #e2e8f0; }
+.market-card .mdesc { font-size: 0.68rem; color: #8892b0; margin-top: 2px; }
+
+/* ---- PILL TABS (แทน st.tabs) ---- */
+.pill-tabs {
+    display: flex; gap: 8px; margin-bottom: 16px;
+    overflow-x: auto; padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+}
+.pill-tab {
+    background: #1a1a2e; border: 1px solid #2a2a4a;
+    border-radius: 20px; padding: 8px 16px;
+    font-size: 0.8rem; font-weight: 600; cursor: pointer;
+    white-space: nowrap; color: #8892b0;
+    transition: all 0.2s; flex-shrink: 0;
+}
+.pill-tab.active {
+    background: #6c63ff; border-color: #6c63ff; color: #fff;
+    box-shadow: 0 2px 10px rgba(108,99,255,0.4);
 }
 
-.stButton > button:hover {
-    background: linear-gradient(135deg, #7d75ff, #4a3f99);
-    box-shadow: 0 6px 20px rgba(108, 99, 255, 0.5);
-    transform: translateY(-1px);
+/* ---- PARAM SECTION ---- */
+.param-section {
+    background: #1a1a2e;
+    border: 1px solid #2a2a4a;
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 12px;
+}
+.param-title {
+    font-size: 0.78rem; font-weight: 700; color: #6c63ff;
+    text-transform: uppercase; letter-spacing: 1px;
+    margin-bottom: 12px;
+    display: flex; align-items: center; gap: 6px;
 }
 
-.update-time {
-    font-size: 0.75rem;
-    color: #636e72;
-    text-align: right;
-    margin-top: 0.5rem;
+/* ---- STOCK CARD ---- */
+.stock-card {
+    background: #1a1a2e;
+    border: 1px solid #2a2a4a;
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 10px;
+    position: relative;
+    transition: border-color 0.2s;
+}
+.stock-card.buy  { border-left: 4px solid #00b894; }
+.stock-card.sell { border-left: 4px solid #d63031; }
+.stock-card.watch{ border-left: 4px solid #fdcb6e; }
+.stock-card.neutral { border-left: 4px solid #636e72; }
+
+.sc-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+.sc-symbol { font-size: 1.05rem; font-weight: 700; color: #fff; font-family: 'IBM Plex Mono', monospace; }
+.sc-name { font-size: 0.72rem; color: #8892b0; margin-top: 2px; }
+.sc-price { font-size: 1.05rem; font-weight: 700; color: #fff; text-align: right; font-family: 'IBM Plex Mono', monospace; }
+.sc-change { font-size: 0.72rem; text-align: right; margin-top: 2px; font-weight: 600; }
+.change-up { color: #00b894; }
+.change-dn { color: #d63031; }
+
+.sc-bars {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 6px; margin-top: 10px;
+}
+.sc-bar-item { text-align: center; }
+.sc-bar-label { font-size: 0.62rem; color: #636e72; text-transform: uppercase; }
+.sc-bar-val { font-size: 0.8rem; font-weight: 600; color: #e2e8f0; font-family: 'IBM Plex Mono', monospace; }
+
+.sc-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+.score-ring {
+    width: 42px; height: 42px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.85rem; font-weight: 700; font-family: 'IBM Plex Mono', monospace;
+    flex-shrink: 0;
+}
+.score-h { background: rgba(0,184,148,0.2); border: 2px solid #00b894; color: #00b894; }
+.score-m { background: rgba(253,203,110,0.2); border: 2px solid #fdcb6e; color: #fdcb6e; }
+.score-l { background: rgba(214,48,49,0.2); border: 2px solid #d63031; color: #d63031; }
+
+.signal-chip {
+    font-size: 0.75rem; font-weight: 700; padding: 4px 10px;
+    border-radius: 12px; display: inline-block;
+}
+.chip-buy     { background: rgba(0,184,148,0.15); color: #00b894; border: 1px solid #00b89460; }
+.chip-sell    { background: rgba(214,48,49,0.15);  color: #d63031; border: 1px solid #d6303160; }
+.chip-watch   { background: rgba(253,203,110,0.15);color: #fdcb6e; border: 1px solid #fdcb6e60; }
+.chip-neutral { background: rgba(99,110,114,0.15); color: #636e72; border: 1px solid #63637260; }
+
+.rr-badge { font-size: 0.7rem; color: #8892b0; }
+.rr-val { color: #6c63ff; font-weight: 700; }
+
+/* ---- TARGETS ROW ---- */
+.target-row {
+    display: grid; grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 6px; margin-top: 8px;
+}
+.tgt { background: #12122a; border-radius: 8px; padding: 7px 4px; text-align: center; }
+.tgt-label { font-size: 0.6rem; color: #636e72; text-transform: uppercase; letter-spacing: 0.5px; }
+.tgt-val { font-size: 0.78rem; font-weight: 700; font-family: 'IBM Plex Mono', monospace; margin-top: 2px; }
+.tgt-entry { color: #6c63ff; } .tgt-t1 { color: #00b894; } .tgt-t2 { color: #00cec9; } .tgt-sl { color: #d63031; }
+
+/* ---- DEEP ANALYSIS ---- */
+.da-header {
+    background: linear-gradient(135deg, #12122a, #1a1035);
+    border: 1px solid rgba(108,99,255,0.4);
+    border-radius: 14px; padding: 16px; margin-bottom: 14px;
+}
+.da-symbol { font-size: 1.5rem; font-weight: 700; color: #fff; font-family: 'IBM Plex Mono', monospace; }
+.da-price  { font-size: 1.8rem; font-weight: 700; font-family: 'IBM Plex Mono', monospace; }
+.da-market-tag {
+    display: inline-block; font-size: 0.68rem; font-weight: 700;
+    padding: 3px 8px; border-radius: 8px; margin-left: 8px;
+    vertical-align: middle;
+}
+.tag-th { background: #1a3a1a; color: #00b894; border: 1px solid #00b89440; }
+.tag-us { background: #1a1a3a; color: #6c63ff; border: 1px solid #6c63ff40; }
+.tag-cn { background: #3a1a1a; color: #d63031; border: 1px solid #d6303140; }
+
+.ind-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 8px; margin-bottom: 14px;
+}
+.ind-box {
+    background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 10px;
+    padding: 10px; display: flex; flex-direction: column; gap: 2px;
+}
+.ind-label { font-size: 0.65rem; color: #636e72; text-transform: uppercase; letter-spacing: 0.5px; }
+.ind-val   { font-size: 0.95rem; font-weight: 700; font-family: 'IBM Plex Mono', monospace; }
+.ind-status{ font-size: 0.65rem; margin-top: 1px; }
+.bull { color: #00b894; } .bear { color: #d63031; } .neut { color: #fdcb6e; }
+
+.signal-list { margin-bottom: 14px; }
+.sig-item {
+    border-radius: 10px; padding: 9px 12px; margin-bottom: 6px;
+    font-size: 0.8rem; line-height: 1.5; border-left: 3px solid;
+}
+.sig-buy   { background: rgba(0,184,148,0.08); border-color: #00b894; color: #b2f5ea; }
+.sig-sell  { background: rgba(214,48,49,0.08); border-color: #d63031;  color: #fed7d7; }
+.sig-neut  { background: rgba(99,110,114,0.08); border-color: #636e72; color: #cbd5e0; }
+
+.pivot-row {
+    display: flex; gap: 6px; overflow-x: auto;
+    padding-bottom: 4px; margin-bottom: 14px;
+    -webkit-overflow-scrolling: touch;
+}
+.pvt-box {
+    flex-shrink: 0; background: #1a1a2e; border-radius: 10px;
+    padding: 8px 12px; text-align: center; min-width: 72px;
+    border: 1px solid #2a2a4a;
+}
+.pvt-label { font-size: 0.6rem; color: #636e72; text-transform: uppercase; }
+.pvt-val   { font-size: 0.82rem; font-weight: 700; font-family: 'IBM Plex Mono', monospace; margin-top: 2px; }
+
+/* ---- MISC ---- */
+.section-title {
+    font-size: 0.72rem; font-weight: 700; color: #8892b0;
+    text-transform: uppercase; letter-spacing: 1px;
+    margin: 16px 0 10px; display: flex; align-items: center; gap: 6px;
+}
+.section-title::after {
+    content: ''; flex: 1; height: 1px; background: #2a2a4a;
+}
+.empty-state {
+    text-align: center; padding: 32px 16px;
+    color: #636e72; font-size: 0.88rem; line-height: 1.8;
+}
+.update-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px; background: #12122a; border-radius: 10px;
+    font-size: 0.7rem; color: #636e72; margin-bottom: 12px;
+}
+.mock-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: rgba(253,203,110,0.1); border: 1px solid #fdcb6e40;
+    color: #fdcb6e; font-size: 0.68rem; font-weight: 700;
+    padding: 3px 8px; border-radius: 8px;
 }
 
-.thailand-flag { font-size: 1.2rem; }
-.usa-flag { font-size: 1.2rem; }
-.china-flag { font-size: 1.2rem; }
+/* ---- streamlit overrides ---- */
+div.stButton > button {
+    width: 100%; background: linear-gradient(135deg, #6c63ff, #4f46e5);
+    color: #fff; border: none; border-radius: 12px;
+    padding: 14px; font-size: 0.95rem; font-weight: 700;
+    font-family: 'Sarabun', sans-serif;
+    box-shadow: 0 4px 16px rgba(108,99,255,0.35);
+    transition: all 0.2s;
+}
+div.stButton > button:hover { opacity: 0.9; transform: translateY(-1px); }
+div.stButton > button:active { transform: scale(0.97); }
+
+div[data-testid="stSelectbox"] > label,
+div[data-testid="stSlider"] > label,
+div[data-testid="stExpander"] > div > div > p { color: #8892b0 !important; font-size: 0.82rem !important; }
+
+.stSlider > div { padding: 0 !important; }
+
+div[data-testid="stExpander"] {
+    background: #1a1a2e; border: 1px solid #2a2a4a !important;
+    border-radius: 12px !important; margin-bottom: 8px;
+}
+
+.stDataFrame { background: #1a1a2e !important; border-radius: 12px !important; }
+.stDataFrame table { font-size: 0.78rem !important; }
+
+footer { visibility: hidden; }
+#MainMenu { visibility: hidden; }
+header[data-testid="stHeader"] { background: #0d0d14 !important; }
+
+div[data-testid="stSidebar"] { background: #12122a !important; }
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================================
-# 3. SETTRADE API CONNECTION (MOCK MODE สำหรับ demo)
+# STOCK UNIVERSE
 # ============================================================
-USE_MOCK = True  # เปลี่ยนเป็น False เมื่อต้องการใช้ Settrade จริง
-
-@st.cache_resource
-def init_settrade():
-    if USE_MOCK:
-        return None, None
-    investor = Investor(
-        app_id=APP_ID,
-        app_secret=APP_SECRET,
-        app_code=APP_CODE,
-        broker_id=BROKER_ID
-    )
-    return investor.Market(), investor.Realtime()
-
-# ============================================================
-# 4. THAI STOCK UNIVERSE (ตลาดหลักทรัพย์ไทยทั้งหมด - ตัวอย่าง SET100)
-# ============================================================
-THAI_STOCKS = [
-    # ธนาคาร
-    ("KBANK", "กสิกรไทย"), ("BBL", "กรุงเทพ"), ("SCB", "ไทยพาณิชย์"),
-    ("KTB", "กรุงไทย"), ("TMB", "ทหารไทย"), ("BAY", "กรุงศรี"),
-    ("TISCO", "ทิสโก้"), ("KKP", "เกียรตินาคินภัทร"),
-    # พลังงาน
-    ("PTT", "ปตท."), ("PTTEP", "ปตท.สผ."), ("GULF", "กัลฟ์"), 
-    ("GPSC", "โกลบอลเพาเวอร์"), ("RATCH", "ราช กรุ๊ป"), ("BGRIM", "บี.กริม"),
-    ("EGCO", "เอ็กโก"), ("CKP", "ซีเค เพาเวอร์"),
-    # สื่อสาร / เทคโนโลยี
-    ("ADVANC", "แอดวานซ์"), ("TRUE", "ทรู"), ("DTAC", "ดีแทค"), ("INSET", "อินเซ็ท"),
-    ("BE8", "บี8"), ("MFEC", "MFEC"), ("INET", "อินเทอร์เน็ต"),
-    # ค้าปลีก / อุปโภคบริโภค
-    ("CPALL", "ซีพีออลล์"), ("CRC", "เซ็นทรัล รีเทล"), ("HMPRO", "โฮมโปร"),
-    ("MAKRO", "แม็คโคร"), ("BJC", "บีเจซี"), ("DOHOME", "โดโฮม"),
-    # อาหาร / เกษตร
-    ("CPF", "ซีพีเอฟ"), ("TU", "ไทยยูเนี่ยน"), ("GFPT", "จีเอฟพีที"),
-    ("NRF", "NRF"), ("BTG", "บีทาเก้น"),
-    # อสังหาริมทรัพย์
-    ("LH", "แลนด์แอนด์เฮาส์"), ("AP", "เอพี"), ("SIRI", "แสนสิริ"),
-    ("QH", "ควอลิตี้เฮ้าส์"), ("SC", "เอสซี แอสเสท"),
-    # การบิน / การท่องเที่ยว
-    ("AOT", "ท่าอากาศยาน"), ("AAV", "เอเชีย เอวิเอชั่น"), ("CENTEL", "เซ็นทารา"),
-    ("MINT", "ไมเนอร์"), ("ERW", "อีอาร์ดับบิ้ว"),
-    # สุขภาพ
-    ("BDMS", "กรุงเทพดุสิต"), ("BGH", "กรุงเทพ"), ("BCH", "บางกอก"),
-    ("BH", "กรุงเทพ เชน"), ("VIBHA", "วิภาวดี"),
-    # วัสดุก่อสร้าง / อุตสาหกรรม
-    ("SCC", "ปูนซิเมนต์ไทย"), ("SCCC", "ปูนซีเมนต์นครหลวง"),
-    ("TPIPP", "ทีพีไอ"), ("IRPC", "IRPC"), ("PTTGC", "พีทีที โกลบอล"),
-    # การเงิน
-    ("MTC", "เมืองไทย แคปปิตอล"), ("TIDLOR", "ไทยเดินทาง"),
-    ("SAWAD", "ศาวะดี"), ("AEONTS", "อิออน"), ("ASK", "เอเซียร์"),
-]
-
-INTL_TECH_STOCKS = [
-    # สหรัฐอเมริกา
-    ("AAPL", "Apple Inc.", "US"),
-    ("MSFT", "Microsoft Corp.", "US"),
-    ("NVDA", "NVIDIA Corp.", "US"),
-    ("GOOGL", "Alphabet Inc.", "US"),
-    ("META", "Meta Platforms", "US"),
-    ("AMZN", "Amazon.com", "US"),
-    ("TSLA", "Tesla Inc.", "US"),
-    ("AMD", "Advanced Micro Devices", "US"),
-    ("INTC", "Intel Corp.", "US"),
-    ("AVGO", "Broadcom Inc.", "US"),
-    ("QCOM", "Qualcomm", "US"),
-    ("MU", "Micron Technology", "US"),
-    ("AMAT", "Applied Materials", "US"),
-    ("LRCX", "Lam Research", "US"),
-    ("SNPS", "Synopsys", "US"),
-    # จีน
-    ("BABA", "Alibaba Group", "CN"),
-    ("JD", "JD.com", "CN"),
-    ("BIDU", "Baidu Inc.", "CN"),
-    ("NTES", "NetEase", "CN"),
-    ("PDD", "Pinduoduo", "CN"),
-    ("TCOM", "Trip.com", "CN"),
-    ("NIO", "NIO Inc.", "CN"),
-    ("XPEV", "XPeng Inc.", "CN"),
-    ("LI", "Li Auto", "CN"),
-    ("BILI", "Bilibili", "CN"),
-    ("IQ", "iQIYI", "CN"),
-    ("WB", "Weibo Corp.", "CN"),
-    ("FUTU", "Futu Holdings", "CN"),
-    ("TIGR", "UP Fintech", "CN"),
-    ("CAMT", "Camtek", "CN"),
-]
-
-# ============================================================
-# 5. MOCK DATA GENERATOR (เลียนแบบ Settrade API)
-# ============================================================
-def generate_mock_candles(symbol, n=100):
-    """สร้างข้อมูล OHLCV จำลอง"""
-    np.random.seed(hash(symbol) % 10000)
-    base = random.uniform(10, 500)
-    prices = [base]
-    for _ in range(n - 1):
-        change = np.random.normal(0, 0.015)
-        prices.append(max(prices[-1] * (1 + change), 1))
-    
-    dates = [(datetime.now() - timedelta(days=n - i)).strftime("%Y-%m-%d") for i in range(n)]
-    volumes = [int(np.random.uniform(500000, 5000000)) for _ in range(n)]
-    opens = [p * np.random.uniform(0.995, 1.005) for p in prices]
-    highs = [max(o, p) * np.random.uniform(1.001, 1.02) for o, p in zip(opens, prices)]
-    lows = [min(o, p) * np.random.uniform(0.98, 0.999) for o, p in zip(opens, prices)]
-    
-    df = pd.DataFrame({
-        "date": dates,
-        "open": opens,
-        "high": highs,
-        "low": lows,
-        "last": prices,
-        "volume": volumes
-    })
-    return df
-
-def get_mock_quote(symbol):
-    """สร้าง quote จำลอง"""
-    np.random.seed(hash(symbol + str(datetime.now().hour)) % 10000)
-    base = random.uniform(10, 500)
-    change = np.random.normal(0, 1.5)
-    return {
-        "symbol": symbol,
-        "last": round(base, 2),
-        "change": round(change, 2),
-        "changePercent": round(change / base * 100, 2),
-        "volume": int(np.random.uniform(500000, 8000000)),
-        "bid": round(base * 0.999, 2),
-        "ask": round(base * 1.001, 2),
-        "high": round(base * 1.02, 2),
-        "low": round(base * 0.98, 2),
-    }
-
-# ============================================================
-# 6. TECHNICAL INDICATORS
-# ============================================================
-def calc_sma(series, period):
-    return series.rolling(window=period).mean()
-
-def calc_ema(series, period):
-    return series.ewm(span=period, adjust=False).mean()
-
-def calc_rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.clip(lower=0).rolling(window=period).mean()
-    loss = (-delta.clip(upper=0)).rolling(window=period).mean()
-    rs = gain / (loss + 1e-10)
-    return 100 - (100 / (1 + rs))
-
-def calc_macd(series, fast=12, slow=26, signal=9):
-    ema_fast = calc_ema(series, fast)
-    ema_slow = calc_ema(series, slow)
-    macd_line = ema_fast - ema_slow
-    signal_line = calc_ema(macd_line, signal)
-    histogram = macd_line - signal_line
-    return macd_line, signal_line, histogram
-
-def calc_bbands(series, period=20, std_dev=2):
-    mid = calc_sma(series, period)
-    std = series.rolling(window=period).std()
-    upper = mid + std_dev * std
-    lower = mid - std_dev * std
-    pct_b = (series - lower) / (upper - lower + 1e-10)
-    return upper, mid, lower, pct_b
-
-def calc_stochastic(high, low, close, k_period=14, d_period=3):
-    lowest_low = low.rolling(window=k_period).min()
-    highest_high = high.rolling(window=k_period).max()
-    k = 100 * (close - lowest_low) / (highest_high - lowest_low + 1e-10)
-    d = k.rolling(window=d_period).mean()
-    return k, d
-
-def calc_atr(high, low, close, period=14):
-    tr = pd.concat([
-        high - low,
-        (high - close.shift()).abs(),
-        (low - close.shift()).abs()
-    ], axis=1).max(axis=1)
-    return tr.rolling(window=period).mean()
-
-def calc_obv(close, volume):
-    direction = np.sign(close.diff())
-    direction.iloc[0] = 0
-    return (volume * direction).cumsum()
-
-def calc_cci(high, low, close, period=20):
-    typical = (high + low + close) / 3
-    sma = typical.rolling(window=period).mean()
-    mad = typical.rolling(window=period).apply(lambda x: np.abs(x - x.mean()).mean())
-    return (typical - sma) / (0.015 * mad + 1e-10)
-
-def calc_williams_r(high, low, close, period=14):
-    highest_high = high.rolling(window=period).max()
-    lowest_low = low.rolling(window=period).min()
-    return -100 * (highest_high - close) / (highest_high - lowest_low + 1e-10)
-
-def calc_mfi(high, low, close, volume, period=14):
-    typical = (high + low + close) / 3
-    money_flow = typical * volume
-    positive = money_flow.where(typical > typical.shift(), 0).rolling(period).sum()
-    negative = money_flow.where(typical < typical.shift(), 0).rolling(period).sum()
-    mfi = 100 - (100 / (1 + positive / (negative + 1e-10)))
-    return mfi
-
-def calc_adx(high, low, close, period=14):
-    tr = pd.concat([
-        high - low,
-        (high - close.shift()).abs(),
-        (low - close.shift()).abs()
-    ], axis=1).max(axis=1)
-    dm_plus = (high - high.shift()).clip(lower=0)
-    dm_minus = (low.shift() - low).clip(lower=0)
-    dm_plus = dm_plus.where(dm_plus > dm_minus, 0)
-    dm_minus = dm_minus.where(dm_minus > dm_plus, 0)
-    atr14 = tr.rolling(period).mean()
-    di_plus = 100 * dm_plus.rolling(period).mean() / (atr14 + 1e-10)
-    di_minus = 100 * dm_minus.rolling(period).mean() / (atr14 + 1e-10)
-    dx = 100 * (di_plus - di_minus).abs() / (di_plus + di_minus + 1e-10)
-    adx = dx.rolling(period).mean()
-    return adx, di_plus, di_minus
-
-def calc_vwap(high, low, close, volume):
-    typical = (high + low + close) / 3
-    cumvol = volume.cumsum()
-    cumtp = (typical * volume).cumsum()
-    return cumtp / (cumvol + 1e-10)
-
-def calc_pivot(high, low, close):
-    pivot = (high + low + close) / 3
-    r1 = 2 * pivot - low
-    s1 = 2 * pivot - high
-    r2 = pivot + (high - low)
-    s2 = pivot - (high - low)
-    return pivot, r1, r2, s1, s2
-
-def compute_all_indicators(df, params):
-    """คำนวณ indicator ทุกตัว"""
-    close = df["last"]
-    high = df["high"]
-    low = df["low"]
-    volume = df["volume"]
-    
-    ind = {}
-    # Trend
-    ind["sma20"]  = calc_sma(close, params["sma_short"]).iloc[-1]
-    ind["sma50"]  = calc_sma(close, params["sma_mid"]).iloc[-1]
-    ind["sma200"] = calc_sma(close, params["sma_long"]).iloc[-1]
-    ind["ema12"]  = calc_ema(close, params["ema_fast"]).iloc[-1]
-    ind["ema26"]  = calc_ema(close, params["ema_slow"]).iloc[-1]
-    
-    # Momentum
-    ind["rsi"]    = calc_rsi(close, params["rsi_period"]).iloc[-1]
-    macd_l, macd_s, macd_h = calc_macd(close, params["macd_fast"], params["macd_slow"], params["macd_signal"])
-    ind["macd"]   = macd_l.iloc[-1]
-    ind["macd_signal"] = macd_s.iloc[-1]
-    ind["macd_hist"]   = macd_h.iloc[-1]
-    
-    # Volatility
-    bbu, bbm, bbl, bbp = calc_bbands(close, params["bb_period"], params["bb_std"])
-    ind["bb_upper"] = bbu.iloc[-1]
-    ind["bb_mid"]   = bbm.iloc[-1]
-    ind["bb_lower"] = bbl.iloc[-1]
-    ind["bb_pct"]   = bbp.iloc[-1]
-    ind["atr"]      = calc_atr(high, low, close, params["atr_period"]).iloc[-1]
-    
-    # Stochastic
-    stoch_k, stoch_d = calc_stochastic(high, low, close, params["stoch_k"], params["stoch_d"])
-    ind["stoch_k"] = stoch_k.iloc[-1]
-    ind["stoch_d"] = stoch_d.iloc[-1]
-    
-    # Volume
-    ind["obv"]     = calc_obv(close, volume).iloc[-1]
-    ind["mfi"]     = calc_mfi(high, low, close, volume, params["mfi_period"]).iloc[-1]
-    ind["vol_avg"] = volume.rolling(20).mean().iloc[-1]
-    ind["vol_ratio"] = volume.iloc[-1] / (ind["vol_avg"] + 1)
-    
-    # Other Oscillators
-    ind["cci"]     = calc_cci(high, low, close, params["cci_period"]).iloc[-1]
-    ind["williams_r"] = calc_williams_r(high, low, close, params["williams_period"]).iloc[-1]
-    
-    # Trend Strength
-    adx_val, di_plus, di_minus = calc_adx(high, low, close, params["adx_period"])
-    ind["adx"]     = adx_val.iloc[-1]
-    ind["di_plus"] = di_plus.iloc[-1]
-    ind["di_minus"]= di_minus.iloc[-1]
-    
-    # VWAP
-    ind["vwap"]    = calc_vwap(high, low, close, volume).iloc[-1]
-    
-    # Pivot
-    pivot, r1, r2, s1, s2 = calc_pivot(high.iloc[-1], low.iloc[-1], close.iloc[-1])
-    ind["pivot"] = pivot
-    ind["r1"] = r1
-    ind["r2"] = r2
-    ind["s1"] = s1
-    ind["s2"] = s2
-    
-    # Price
-    ind["price"]    = close.iloc[-1]
-    ind["price_prev"] = close.iloc[-2]
-    ind["change_pct"] = (close.iloc[-1] / close.iloc[-2] - 1) * 100
-    ind["price_52wh"] = high.rolling(252).max().iloc[-1]
-    ind["price_52wl"] = low.rolling(252).min().iloc[-1]
-    
-    return ind
-
-# ============================================================
-# 7. SCORING ENGINE
-# ============================================================
-def score_stock(ind, params):
-    """คะแนน 0-100 + สัญญาณ + เหตุผล"""
-    buy_signals = []
-    sell_signals = []
-    neutral_signals = []
-    score = 50  # เริ่มต้นกลาง
-
-    price = ind["price"]
-    rsi = ind["rsi"]
-    ob = params["rsi_overbought"]
-    os = params["rsi_oversold"]
-
-    # --- RSI ---
-    if rsi < os:
-        score += 8; buy_signals.append(f"RSI = {rsi:.1f} (Oversold < {os}) → โซนซื้อ")
-    elif rsi > ob:
-        score -= 8; sell_signals.append(f"RSI = {rsi:.1f} (Overbought > {ob}) → โซนขาย")
-    else:
-        neutral_signals.append(f"RSI = {rsi:.1f} (ปกติ)")
-
-    # --- MACD ---
-    if ind["macd"] > ind["macd_signal"] and ind["macd_hist"] > 0:
-        score += 7; buy_signals.append("MACD ตัดขึ้น Signal Line → โมเมนตัมขาขึ้น")
-    elif ind["macd"] < ind["macd_signal"] and ind["macd_hist"] < 0:
-        score -= 7; sell_signals.append("MACD ตัดลง Signal Line → โมเมนตัมขาลง")
-
-    # --- MA Trend ---
-    if price > ind["sma20"] > ind["sma50"]:
-        score += 6; buy_signals.append(f"ราคา > SMA20 > SMA50 → uptrend ชัดเจน")
-    elif price < ind["sma20"] < ind["sma50"]:
-        score -= 6; sell_signals.append(f"ราคา < SMA20 < SMA50 → downtrend ชัดเจน")
-
-    if price > ind["sma200"]:
-        score += 4; buy_signals.append(f"ราคา > SMA200 → เหนือค่าเฉลี่ยระยะยาว")
-    else:
-        score -= 4; sell_signals.append(f"ราคา < SMA200 → ต่ำกว่าค่าเฉลี่ยระยะยาว")
-
-    # --- Bollinger Bands ---
-    bb_pct = ind["bb_pct"]
-    if bb_pct < 0.2:
-        score += 6; buy_signals.append(f"ราคาใกล้ BB Lower → โซน oversold ของ BB")
-    elif bb_pct > 0.8:
-        score -= 5; sell_signals.append(f"ราคาใกล้ BB Upper → โซน overbought ของ BB")
-    if price > ind["bb_upper"]:
-        score += 3; buy_signals.append("Breakout เหนือ BB Upper → สัญญาณ breakout")
-
-    # --- Stochastic ---
-    sk, sd = ind["stoch_k"], ind["stoch_d"]
-    if sk < 20 and sd < 20 and sk > sd:
-        score += 5; buy_signals.append(f"Stochastic %K={sk:.1f} ตัดขึ้น %D={sd:.1f} ในโซน oversold")
-    elif sk > 80 and sd > 80 and sk < sd:
-        score -= 5; sell_signals.append(f"Stochastic %K={sk:.1f} ตัดลง %D={sd:.1f} ในโซน overbought")
-
-    # --- CCI ---
-    cci = ind["cci"]
-    if cci < -100:
-        score += 4; buy_signals.append(f"CCI = {cci:.1f} < -100 → oversold")
-    elif cci > 100:
-        score -= 4; sell_signals.append(f"CCI = {cci:.1f} > 100 → overbought")
-
-    # --- Williams %R ---
-    wr = ind["williams_r"]
-    if wr < -80:
-        score += 4; buy_signals.append(f"Williams %R = {wr:.1f} < -80 → oversold")
-    elif wr > -20:
-        score -= 4; sell_signals.append(f"Williams %R = {wr:.1f} > -20 → overbought")
-
-    # --- ADX / Trend Strength ---
-    adx = ind["adx"]
-    if adx > 25:
-        if ind["di_plus"] > ind["di_minus"]:
-            score += 5; buy_signals.append(f"ADX = {adx:.1f} > 25 & +DI > -DI → uptrend แข็งแกร่ง")
-        else:
-            score -= 5; sell_signals.append(f"ADX = {adx:.1f} > 25 & -DI > +DI → downtrend แข็งแกร่ง")
-    else:
-        neutral_signals.append(f"ADX = {adx:.1f} < 25 → ไม่มีแนวโน้มชัดเจน (sideways)")
-
-    # --- MFI (Money Flow Index) ---
-    mfi = ind["mfi"]
-    if mfi < 20:
-        score += 4; buy_signals.append(f"MFI = {mfi:.1f} < 20 → เงินไหลออกมาก (โอกาสดีดกลับ)")
-    elif mfi > 80:
-        score -= 4; sell_signals.append(f"MFI = {mfi:.1f} > 80 → เงินไหลเข้ามากเกิน (ระวังแรงขาย)")
-
-    # --- Volume ---
-    vol_ratio = ind["vol_ratio"]
-    if vol_ratio > 1.5:
-        score += 3; buy_signals.append(f"Volume สูงกว่าค่าเฉลี่ย {vol_ratio:.1f}x → มีนัยสำคัญ")
-    elif vol_ratio < 0.5:
-        neutral_signals.append(f"Volume ต่ำผิดปกติ ({vol_ratio:.1f}x) → ระวังสัญญาณหลอก")
-
-    # --- VWAP ---
-    if price > ind["vwap"]:
-        score += 3; buy_signals.append(f"ราคา > VWAP → นักลงทุนสถาบันยังซื้ออยู่")
-    else:
-        score -= 3; sell_signals.append(f"ราคา < VWAP → แรงขายจากสถาบัน")
-
-    # --- 52-week ---
-    pct_52wh = (price / ind["price_52wh"] - 1) * 100
-    pct_52wl = (price / ind["price_52wl"] - 1) * 100
-    if pct_52wh > -5:
-        score += 3; buy_signals.append(f"ราคาใกล้ 52W High → momentum สูง")
-    if pct_52wl < 20:
-        buy_signals.append(f"ราคาห่างจาก 52W Low {pct_52wl:.1f}% → โซนต่ำ")
-
-    # Clamp
-    score = max(0, min(100, score))
-
-    if score >= 65:
-        recommendation = "🟢 ซื้อ"
-        rec_class = "buy"
-    elif score <= 35:
-        recommendation = "🔴 ขาย"
-        rec_class = "sell"
-    elif 55 <= score < 65:
-        recommendation = "🟡 เฝ้าระวัง"
-        rec_class = "watch"
-    else:
-        recommendation = "⚪ ถือ"
-        rec_class = "neutral"
-
-    # Price targets
-    atr = ind["atr"]
-    buy_entry   = round(price * 0.985, 2)
-    target1     = round(price + atr * 2, 2)
-    target2     = round(price + atr * 3.5, 2)
-    stop_loss   = round(price - atr * 1.5, 2)
-    
-    upside = round((target1 / price - 1) * 100, 1)
-    downside = round((price / stop_loss - 1) * 100, 1)
-    risk_reward = round(upside / downside, 2) if downside > 0 else 0
-
-    return {
-        "score": score,
-        "recommendation": recommendation,
-        "rec_class": rec_class,
-        "buy_signals": buy_signals,
-        "sell_signals": sell_signals,
-        "neutral_signals": neutral_signals,
-        "buy_entry": buy_entry,
-        "target1": target1,
-        "target2": target2,
-        "stop_loss": stop_loss,
-        "upside": upside,
-        "downside": downside,
-        "risk_reward": risk_reward,
-    }
-
-# ============================================================
-# 8. SCAN ENGINE
-# ============================================================
-def scan_stocks(stock_list, params, progress_bar=None, status_text=None):
-    results = []
-    total = len(stock_list)
-    for i, item in enumerate(stock_list):
-        if len(item) == 2:
-            symbol, name = item
-            country = "TH"
-        else:
-            symbol, name, country = item
-
-        try:
-            if USE_MOCK:
-                df = generate_mock_candles(symbol)
-                quote = get_mock_quote(symbol)
-            else:
-                market_api, realtime_api = init_settrade()
-                raw = market_api.get_candlestick(symbol, interval="1d", limit=100)
-                df = pd.DataFrame(raw)
-                quote = realtime_api.get_quote_symbol(symbol)
-
-            ind = compute_all_indicators(df, params)
-            scored = score_stock(ind, params)
-
-            results.append({
-                "Symbol": symbol,
-                "Name": name,
-                "Country": country,
-                "Price": round(ind["price"], 2),
-                "Change%": round(ind["change_pct"], 2),
-                "RSI": round(ind["rsi"], 1),
-                "MACD_Hist": round(ind["macd_hist"], 4),
-                "ADX": round(ind["adx"], 1),
-                "BB%": round(ind["bb_pct"], 3),
-                "Volume_Ratio": round(ind["vol_ratio"], 2),
-                "Score": scored["score"],
-                "Signal": scored["recommendation"],
-                "Signal_Class": scored["rec_class"],
-                "BuyEntry": scored["buy_entry"],
-                "Target1": scored["target1"],
-                "Target2": scored["target2"],
-                "StopLoss": scored["stop_loss"],
-                "RiskReward": scored["risk_reward"],
-                "_ind": ind,
-                "_scored": scored,
-            })
-        except Exception as e:
-            pass
-
-        if progress_bar:
-            progress_bar.progress((i + 1) / total)
-        if status_text:
-            status_text.text(f"กำลังสแกน... {symbol} ({i+1}/{total})")
-
-    return pd.DataFrame(results)
-
-# ============================================================
-# 9. SIDEBAR PARAMETERS
-# ============================================================
-with st.sidebar:
-    st.markdown("## ⚙️ ตั้งค่าพารามิเตอร์")
-
-    st.markdown('<div class="section-header">📊 Trend</div>', unsafe_allow_html=True)
-    sma_short = st.slider("SMA Short (วัน)", 5, 50, 20)
-    sma_mid   = st.slider("SMA Mid (วัน)", 30, 100, 50)
-    sma_long  = st.slider("SMA Long (วัน)", 100, 300, 200)
-    ema_fast  = st.slider("EMA Fast (วัน)", 5, 20, 12)
-    ema_slow  = st.slider("EMA Slow (วัน)", 15, 50, 26)
-
-    st.markdown('<div class="section-header">🔄 Momentum</div>', unsafe_allow_html=True)
-    rsi_period     = st.slider("RSI Period", 7, 21, 14)
-    rsi_overbought = st.slider("RSI Overbought", 60, 85, 70)
-    rsi_oversold   = st.slider("RSI Oversold", 15, 40, 30)
-    macd_fast   = st.slider("MACD Fast", 8, 20, 12)
-    macd_slow   = st.slider("MACD Slow", 20, 40, 26)
-    macd_signal_p = st.slider("MACD Signal", 5, 15, 9)
-    stoch_k = st.slider("Stochastic %K", 5, 21, 14)
-    stoch_d = st.slider("Stochastic %D", 2, 7, 3)
-    cci_period = st.slider("CCI Period", 10, 30, 20)
-    williams_period = st.slider("Williams %R Period", 7, 21, 14)
-    mfi_period = st.slider("MFI Period", 7, 21, 14)
-
-    st.markdown('<div class="section-header">📏 Volatility</div>', unsafe_allow_html=True)
-    bb_period = st.slider("Bollinger Period", 10, 30, 20)
-    bb_std    = st.slider("Bollinger Std Dev", 1.0, 3.0, 2.0, step=0.5)
-    atr_period = st.slider("ATR Period", 7, 21, 14)
-    adx_period = st.slider("ADX Period", 7, 21, 14)
-
-    st.markdown('<div class="section-header">🎯 ฟิลเตอร์ผลลัพธ์</div>', unsafe_allow_html=True)
-    min_score   = st.slider("คะแนนขั้นต่ำ", 0, 100, 60)
-    min_rr      = st.slider("Risk/Reward ขั้นต่ำ", 0.5, 5.0, 1.5, step=0.5)
-    min_adx     = st.slider("ADX ขั้นต่ำ (ความแรงแนวโน้ม)", 0, 50, 20)
-    show_signal = st.multiselect(
-        "แสดงสัญญาณ",
-        ["🟢 ซื้อ", "🟡 เฝ้าระวัง", "⚪ ถือ", "🔴 ขาย"],
-        default=["🟢 ซื้อ", "🟡 เฝ้าระวัง"]
-    )
-
-params = {
-    "sma_short": sma_short, "sma_mid": sma_mid, "sma_long": sma_long,
-    "ema_fast": ema_fast, "ema_slow": ema_slow,
-    "rsi_period": rsi_period, "rsi_overbought": rsi_overbought, "rsi_oversold": rsi_oversold,
-    "macd_fast": macd_fast, "macd_slow": macd_slow, "macd_signal": macd_signal_p,
-    "stoch_k": stoch_k, "stoch_d": stoch_d,
-    "cci_period": cci_period, "williams_period": williams_period, "mfi_period": mfi_period,
-    "bb_period": bb_period, "bb_std": bb_std, "atr_period": atr_period, "adx_period": adx_period,
+MARKETS = {
+    "SET": {
+        "label": "🇹🇭 SET", "flag": "🇹🇭", "name": "ตลาดหุ้นไทย",
+        "desc": "SET50, SET100, mai", "currency": "฿", "tag_class": "tag-th",
+        "stocks": [
+            ("KBANK","กสิกรไทย"),("BBL","กรุงเทพ"),("SCB","ไทยพาณิชย์"),
+            ("KTB","กรุงไทย"),("BAY","กรุงศรี"),("TISCO","ทิสโก้"),("KKP","เกียรตินาคิน"),
+            ("PTT","ปตท."),("PTTEP","ปตท.สผ."),("GULF","กัลฟ์"),("GPSC","โกลบอลเพาเวอร์"),
+            ("RATCH","ราช กรุ๊ป"),("BGRIM","บี.กริม"),("EGCO","เอ็กโก"),
+            ("ADVANC","แอดวานซ์"),("TRUE","ทรู"),("INSET","อินเซ็ท"),
+            ("MFEC","MFEC"),("BE8","บี8"),("INET","อินเทอร์เน็ต"),
+            ("CPALL","ซีพีออลล์"),("CRC","เซ็นทรัล รีเทล"),("HMPRO","โฮมโปร"),
+            ("MAKRO","แม็คโคร"),("BJC","บีเจซี"),
+            ("CPF","ซีพีเอฟ"),("TU","ไทยยูเนี่ยน"),("GFPT","จีเอฟพีที"),("BTG","บีทาเก้น"),
+            ("LH","แลนด์แอนด์เฮาส์"),("AP","เอพี"),("SIRI","แสนสิริ"),("QH","ควอลิตี้เฮ้าส์"),
+            ("AOT","ท่าอากาศยาน"),("AAV","เอเชีย เอวิเอชั่น"),("CENTEL","เซ็นทารา"),
+            ("MINT","ไมเนอร์"),("ERW","อีอาร์ดับบิ้ว"),
+            ("BDMS","กรุงเทพดุสิต"),("BGH","กรุงเทพ"),("BCH","บางกอก"),("BH","กรุงเทพ เชน"),
+            ("SCC","ปูนซิเมนต์ไทย"),("SCCC","ปูนซีเมนต์นครหลวง"),
+            ("PTTGC","พีทีที โกลบอล"),("IRPC","IRPC"),
+            ("MTC","เมืองไทย แคปปิตอล"),("TIDLOR","ไทยเดินทาง"),
+            ("SAWAD","ศาวะดี"),("AEONTS","อิออน"),
+        ],
+    },
+    "US": {
+        "label": "🇺🇸 US Tech", "flag": "🇺🇸", "name": "หุ้นเทคโนโลยีสหรัฐ",
+        "desc": "NASDAQ, NYSE Tech", "currency": "$", "tag_class": "tag-us",
+        "stocks": [
+            ("AAPL","Apple Inc."),("MSFT","Microsoft Corp."),("NVDA","NVIDIA Corp."),
+            ("GOOGL","Alphabet Inc."),("META","Meta Platforms"),("AMZN","Amazon.com"),
+            ("TSLA","Tesla Inc."),("AMD","Advanced Micro Devices"),("INTC","Intel Corp."),
+            ("AVGO","Broadcom Inc."),("QCOM","Qualcomm"),("MU","Micron Technology"),
+            ("AMAT","Applied Materials"),("LRCX","Lam Research"),("SNPS","Synopsys"),
+            ("ORCL","Oracle Corp."),("CRM","Salesforce"),("ADBE","Adobe Inc."),
+            ("NOW","ServiceNow"),("PLTR","Palantir"),
+        ],
+    },
+    "CN": {
+        "label": "🇨🇳 CN Tech", "flag": "🇨🇳", "name": "หุ้นเทคโนโลยีจีน",
+        "desc": "NYSE/NASDAQ ADR", "currency": "$", "tag_class": "tag-cn",
+        "stocks": [
+            ("BABA","Alibaba Group"),("JD","JD.com"),("BIDU","Baidu Inc."),
+            ("NTES","NetEase"),("PDD","Pinduoduo"),("TCOM","Trip.com"),
+            ("NIO","NIO Inc."),("XPEV","XPeng Inc."),("LI","Li Auto"),
+            ("BILI","Bilibili"),("IQ","iQIYI"),("WB","Weibo Corp."),
+            ("FUTU","Futu Holdings"),("TIGR","UP Fintech"),("LKNCY","Luckin Coffee"),
+        ],
+    },
 }
 
 # ============================================================
-# 10. MAIN UI
+# DATA / INDICATOR FUNCTIONS
 # ============================================================
-st.markdown("""
-<div class="main-header">
-    <h1>🚀 AI Stock Scanner Pro</h1>
-    <p>สแกนหาหุ้นไทย + เทคโนโลยีโลก ด้วย 15+ Technical Indicators</p>
-    <p style="font-size:0.8rem; color:#636e72;">⚡ Powered by Settrade API | RSI · MACD · BB · Stochastic · ADX · CCI · Williams %R · MFI · OBV · VWAP · ATR · Pivot</p>
+def gen_candles(symbol, n=120):
+    np.random.seed(abs(hash(symbol)) % 99999)
+    base = np.random.uniform(8, 600)
+    closes = [base]
+    for _ in range(n - 1):
+        closes.append(max(closes[-1] * (1 + np.random.normal(0, 0.014)), 0.5))
+    closes = np.array(closes)
+    highs  = closes * np.random.uniform(1.001, 1.025, n)
+    lows   = closes * np.random.uniform(0.975, 0.999, n)
+    vols   = np.random.uniform(3e5, 8e6, n).astype(int)
+    return pd.DataFrame({"last": closes, "high": highs, "low": lows, "volume": vols})
+
+def gen_quote(symbol):
+    np.random.seed(abs(hash(symbol + str(datetime.now().hour))) % 99999)
+    p = np.random.uniform(8, 600)
+    chg = np.random.normal(0, 1.8)
+    return {"last": round(p,2), "changePercent": round(chg/p*100,2), "volume": int(np.random.uniform(3e5,8e6))}
+
+def sma(s, n): return s.rolling(n).mean()
+def ema(s, n): return s.ewm(span=n, adjust=False).mean()
+
+def rsi(s, n=14):
+    d = s.diff(); g = d.clip(lower=0).rolling(n).mean(); l = (-d.clip(upper=0)).rolling(n).mean()
+    return 100 - 100/(1 + g/(l+1e-9))
+
+def macd(s, f=12, sl=26, sg=9):
+    ml = ema(s,f) - ema(s,sl); sig = ema(ml,sg); return ml, sig, ml-sig
+
+def bbands(s, n=20, k=2):
+    m = sma(s,n); std = s.rolling(n).std()
+    up, lo = m+k*std, m-k*std
+    pct = (s - lo)/(up - lo + 1e-9)
+    return up, m, lo, pct
+
+def stoch(h, l, c, kp=14, dp=3):
+    ll = l.rolling(kp).min(); hh = h.rolling(kp).max()
+    k = 100*(c-ll)/(hh-ll+1e-9); return k, k.rolling(dp).mean()
+
+def atr(h, l, c, n=14):
+    tr = pd.concat([h-l,(h-c.shift()).abs(),(l-c.shift()).abs()],axis=1).max(axis=1)
+    return tr.rolling(n).mean()
+
+def cci(h, l, c, n=20):
+    tp = (h+l+c)/3; m = tp.rolling(n).mean()
+    mad = tp.rolling(n).apply(lambda x: np.abs(x-x.mean()).mean())
+    return (tp - m)/(0.015*mad + 1e-9)
+
+def williams_r(h, l, c, n=14):
+    return -100*(h.rolling(n).max()-c)/(h.rolling(n).max()-l.rolling(n).min()+1e-9)
+
+def mfi(h, l, c, v, n=14):
+    tp = (h+l+c)/3; mf = tp*v
+    pos = mf.where(tp>tp.shift(),0).rolling(n).sum()
+    neg = mf.where(tp<tp.shift(),0).rolling(n).sum()
+    return 100 - 100/(1 + pos/(neg+1e-9))
+
+def adx(h, l, c, n=14):
+    tr = pd.concat([h-l,(h-c.shift()).abs(),(l-c.shift()).abs()],axis=1).max(axis=1)
+    dmp = (h-h.shift()).clip(lower=0); dmm = (l.shift()-l).clip(lower=0)
+    dmp = dmp.where(dmp>dmm,0); dmm = dmm.where(dmm>dmp,0)
+    atr14 = tr.rolling(n).mean()
+    dip = 100*dmp.rolling(n).mean()/(atr14+1e-9)
+    dim = 100*dmm.rolling(n).mean()/(atr14+1e-9)
+    dx = 100*(dip-dim).abs()/(dip+dim+1e-9)
+    return dx.rolling(n).mean(), dip, dim
+
+def vwap(h, l, c, v):
+    tp = (h+l+c)/3; return (tp*v).cumsum()/(v.cumsum()+1e-9)
+
+def compute_indicators(df, p):
+    c, h, l, v = df["last"], df["high"], df["low"], df["volume"]
+    I = {}
+    I["sma20"]  = sma(c, p["sma_s"]).iloc[-1]
+    I["sma50"]  = sma(c, p["sma_m"]).iloc[-1]
+    I["sma200"] = sma(c, p["sma_l"]).iloc[-1]
+    I["ema12"]  = ema(c, p["ema_f"]).iloc[-1]
+    I["ema26"]  = ema(c, p["ema_s"]).iloc[-1]
+    I["rsi"]    = rsi(c, p["rsi_p"]).iloc[-1]
+    ml, ms, mh  = macd(c, p["macd_f"], p["macd_s"], p["macd_sg"])
+    I["macd"]   = ml.iloc[-1]; I["macd_sig"] = ms.iloc[-1]; I["macd_h"] = mh.iloc[-1]
+    bbu,bbm,bbl,bbp = bbands(c, p["bb_p"], p["bb_k"])
+    I["bbu"]=bbu.iloc[-1]; I["bbm"]=bbm.iloc[-1]; I["bbl"]=bbl.iloc[-1]; I["bbp"]=bbp.iloc[-1]
+    I["atr"]    = atr(h, l, c, p["atr_p"]).iloc[-1]
+    sk, sd = stoch(h, l, c, p["stoch_k"], p["stoch_d"])
+    I["sk"]=sk.iloc[-1]; I["sd"]=sd.iloc[-1]
+    I["cci"]    = cci(h,l,c, p["cci_p"]).iloc[-1]
+    I["wr"]     = williams_r(h,l,c, p["wr_p"]).iloc[-1]
+    I["mfi"]    = mfi(h,l,c,v, p["mfi_p"]).iloc[-1]
+    adx_v,dip,dim = adx(h,l,c, p["adx_p"])
+    I["adx"]=adx_v.iloc[-1]; I["dip"]=dip.iloc[-1]; I["dim"]=dim.iloc[-1]
+    I["vwap"]   = vwap(h,l,c,v).iloc[-1]
+    I["vol_avg"]= v.rolling(20).mean().iloc[-1]
+    I["vol_r"]  = v.iloc[-1]/(I["vol_avg"]+1)
+    I["price"]  = c.iloc[-1]
+    I["chg"]    = (c.iloc[-1]/c.iloc[-2]-1)*100
+    I["52wh"]   = h.rolling(min(252,len(h))).max().iloc[-1]
+    I["52wl"]   = l.rolling(min(252,len(l))).min().iloc[-1]
+    pivot = (h.iloc[-1]+l.iloc[-1]+c.iloc[-1])/3
+    rnge  = h.iloc[-1]-l.iloc[-1]
+    I["pivot"]=pivot; I["r1"]=2*pivot-l.iloc[-1]; I["r2"]=pivot+rnge
+    I["s1"]=2*pivot-h.iloc[-1]; I["s2"]=pivot-rnge
+    return I
+
+def score(I, p):
+    ob, os_ = p["rsi_ob"], p["rsi_os"]
+    bs, ss, ns = [], [], []; sc = 50
+
+    rsi_v = I["rsi"]
+    if rsi_v < os_:    sc+=8;  bs.append(f"RSI {rsi_v:.1f} < {os_} → Oversold โซนซื้อ")
+    elif rsi_v > ob:   sc-=8;  ss.append(f"RSI {rsi_v:.1f} > {ob} → Overbought โซนขาย")
+    else:                       ns.append(f"RSI {rsi_v:.1f} อยู่ในโซนปกติ")
+
+    if I["macd"] > I["macd_sig"] and I["macd_h"] > 0:
+        sc+=7; bs.append("MACD ตัดขึ้น Signal → โมเมนตัมขาขึ้น")
+    elif I["macd"] < I["macd_sig"] and I["macd_h"] < 0:
+        sc-=7; ss.append("MACD ตัดลง Signal → โมเมนตัมขาลง")
+
+    pr = I["price"]
+    if pr > I["sma20"] > I["sma50"]:   sc+=6; bs.append("ราคา > SMA20 > SMA50 → uptrend")
+    elif pr < I["sma20"] < I["sma50"]: sc-=6; ss.append("ราคา < SMA20 < SMA50 → downtrend")
+    if pr > I["sma200"]: sc+=4; bs.append("ราคา > SMA200 → เหนือค่าเฉลี่ยระยะยาว")
+    else:                 sc-=4; ss.append("ราคา < SMA200 → ต่ำกว่าค่าเฉลี่ยระยะยาว")
+
+    bbp = I["bbp"]
+    if bbp < 0.15:   sc+=6; bs.append(f"BB% = {bbp:.2f} ใกล้ Lower Band → oversold")
+    elif bbp > 0.85: sc-=5; ss.append(f"BB% = {bbp:.2f} ใกล้ Upper Band → overbought")
+
+    sk, sd = I["sk"], I["sd"]
+    if sk < 20 and sk > sd: sc+=5; bs.append(f"Stochastic %K {sk:.1f} ตัดขึ้น %D ในโซน oversold")
+    elif sk > 80 and sk < sd: sc-=5; ss.append(f"Stochastic %K {sk:.1f} ตัดลง %D ในโซน overbought")
+
+    cci_v = I["cci"]
+    if cci_v < -100: sc+=4; bs.append(f"CCI {cci_v:.1f} < -100 → oversold")
+    elif cci_v > 100: sc-=4; ss.append(f"CCI {cci_v:.1f} > 100 → overbought")
+
+    wr_v = I["wr"]
+    if wr_v < -80:  sc+=4; bs.append(f"Williams %R {wr_v:.1f} < -80 → oversold")
+    elif wr_v > -20: sc-=4; ss.append(f"Williams %R {wr_v:.1f} > -20 → overbought")
+
+    adx_v = I["adx"]
+    if adx_v > 25:
+        if I["dip"] > I["dim"]: sc+=5; bs.append(f"ADX {adx_v:.1f} > 25 + DI+ > DI- → uptrend แข็งแกร่ง")
+        else:                    sc-=5; ss.append(f"ADX {adx_v:.1f} > 25 + DI- > DI+ → downtrend แข็งแกร่ง")
+    else: ns.append(f"ADX {adx_v:.1f} < 25 → ไม่มีแนวโน้มชัดเจน")
+
+    mfi_v = I["mfi"]
+    if mfi_v < 20:  sc+=4; bs.append(f"MFI {mfi_v:.1f} < 20 → เงินไหลออกมาก (โอกาสดีดกลับ)")
+    elif mfi_v > 80: sc-=4; ss.append(f"MFI {mfi_v:.1f} > 80 → เงินไหลเข้าเกิน (ระวังแรงขาย)")
+
+    vr = I["vol_r"]
+    if vr > 1.5: sc+=3; bs.append(f"Volume สูง {vr:.1f}x ค่าเฉลี่ย → มีนัยสำคัญ")
+    elif vr < 0.5: ns.append(f"Volume ต่ำ {vr:.1f}x → ระวังสัญญาณหลอก")
+
+    if pr > I["vwap"]: sc+=3; bs.append("ราคา > VWAP → แรงซื้อจากสถาบัน")
+    else:               sc-=3; ss.append("ราคา < VWAP → แรงขายจากสถาบัน")
+
+    sc = max(0, min(100, sc))
+    if sc >= 65:   rec, cls = "🟢 ซื้อ", "buy"
+    elif sc <= 35: rec, cls = "🔴 ขาย", "sell"
+    elif sc >= 55: rec, cls = "🟡 เฝ้าระวัง", "watch"
+    else:          rec, cls = "⚪ ถือ", "neutral"
+
+    at = I["atr"]
+    entry = round(pr * 0.985, 2)
+    t1    = round(pr + at * 2.0, 2)
+    t2    = round(pr + at * 3.5, 2)
+    sl    = round(pr - at * 1.5, 2)
+    up    = round((t1/pr-1)*100, 1)
+    dn    = round((pr/sl-1)*100, 1) if sl > 0 else 1
+    rr    = round(up/dn, 2) if dn > 0 else 0
+
+    return dict(sc=sc, rec=rec, cls=cls, bs=bs, ss=ss, ns=ns,
+                entry=entry, t1=t1, t2=t2, sl=sl, up=up, dn=dn, rr=rr)
+
+def scan_market(market_key, params, progress_cb=None):
+    mkt = MARKETS[market_key]
+    rows = []
+    stocks = mkt["stocks"]
+    for i, (sym, name) in enumerate(stocks):
+        try:
+            df = gen_candles(sym)
+            I  = compute_indicators(df, params)
+            S  = score(I, params)
+            rows.append(dict(
+                Symbol=sym, Name=name, Market=market_key,
+                Price=round(I["price"],2), Change=round(I["chg"],2),
+                RSI=round(I["rsi"],1), ADX=round(I["adx"],1),
+                BB=round(I["bbp"],2), VR=round(I["vol_r"],2),
+                Score=S["sc"], Signal=S["rec"], SigCls=S["cls"],
+                Entry=S["entry"], T1=S["t1"], T2=S["t2"], SL=S["sl"],
+                RR=S["rr"], _I=I, _S=S,
+            ))
+        except: pass
+        if progress_cb: progress_cb((i+1)/len(stocks))
+    return pd.DataFrame(rows)
+
+# ============================================================
+# SESSION STATE INIT
+# ============================================================
+for k, v in [("market", None), ("scan_results", {}), ("view", "scan"),
+             ("detail_sym", None), ("detail_mkt", None)]:
+    if k not in st.session_state: st.session_state[k] = v
+
+# ============================================================
+# HEADER
+# ============================================================
+mock_html = '<span class="mock-badge">⚠️ MOCK DATA</span>' if USE_MOCK else \
+            '<span class="mock-badge" style="background:rgba(0,184,148,0.1);border-color:#00b89440;color:#00b894;">⚡ LIVE</span>'
+
+st.markdown(f"""
+<div class="app-header">
+    <h1>📈 Stock Scanner Pro</h1>
+    <div class="sub">
+        <span class="live-dot"></span>
+        15+ Indicators · AI Scoring · ครอบคลุม 3 ตลาด &nbsp;{mock_html}
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
-# Tabs
-tab1, tab2, tab3 = st.tabs(["🇹🇭 หุ้นไทย (SET)", "🌏 หุ้นต่างประเทศ", "🔍 วิเคราะห์เจาะลึก"])
+# ============================================================
+# DEFAULT PARAMS (hidden — expandable)
+# ============================================================
+with st.expander("⚙️ ตั้งค่า Parameters (แตะเพื่อขยาย)", expanded=False):
+    col1, col2 = st.columns(2)
+    with col1:
+        sma_s  = st.slider("SMA สั้น",  5,  50, 20, key="sma_s")
+        sma_m  = st.slider("SMA กลาง", 20, 100, 50, key="sma_m")
+        sma_l  = st.slider("SMA ยาว", 100, 300,200, key="sma_l")
+        ema_f  = st.slider("EMA Fast",  5,  20, 12, key="ema_f")
+        ema_sv = st.slider("EMA Slow", 15,  50, 26, key="ema_sv")
+        rsi_p  = st.slider("RSI Period", 7, 21, 14, key="rsi_p")
+        rsi_ob = st.slider("RSI Overbought", 60, 85, 70, key="rsi_ob")
+        rsi_os = st.slider("RSI Oversold",  15, 40, 30, key="rsi_os")
+    with col2:
+        macd_f  = st.slider("MACD Fast",   8, 20, 12, key="macd_f")
+        macd_s  = st.slider("MACD Slow",  20, 40, 26, key="macd_s")
+        macd_sg = st.slider("MACD Signal", 5, 15,  9, key="macd_sg")
+        bb_p    = st.slider("BB Period",  10, 30, 20, key="bb_p")
+        bb_k    = st.slider("BB Std Dev", 1, 3, 2,    key="bb_k")
+        stoch_k = st.slider("Stoch %K",   5, 21, 14,  key="stoch_k")
+        stoch_d = st.slider("Stoch %D",   2,  7,  3,  key="stoch_d")
+        adx_p   = st.slider("ADX Period", 7, 21, 14,  key="adx_p")
+
+    col3, col4 = st.columns(2)
+    with col3:
+        atr_p  = st.slider("ATR Period",  7, 21, 14, key="atr_p")
+        cci_p  = st.slider("CCI Period", 10, 30, 20, key="cci_p")
+        wr_p   = st.slider("Williams %R",  7, 21, 14, key="wr_p")
+        mfi_p  = st.slider("MFI Period",   7, 21, 14, key="mfi_p")
+    with col4:
+        min_score = st.slider("คะแนนขั้นต่ำ",    0, 100, 60, key="min_score")
+        min_rr    = st.slider("R/R ขั้นต่ำ",    0.5, 5.0, 1.5, step=0.5, key="min_rr")
+        min_adx   = st.slider("ADX ขั้นต่ำ",    0, 40, 18, key="min_adx")
+        sig_opts  = st.multiselect("สัญญาณที่ต้องการ",
+            ["🟢 ซื้อ","🟡 เฝ้าระวัง","⚪ ถือ","🔴 ขาย"],
+            default=["🟢 ซื้อ","🟡 เฝ้าระวัง"], key="sig_opts")
+
+params = dict(
+    sma_s=st.session_state.sma_s, sma_m=st.session_state.sma_m, sma_l=st.session_state.sma_l,
+    ema_f=st.session_state.ema_f, ema_s=st.session_state.ema_sv,
+    rsi_p=st.session_state.rsi_p, rsi_ob=st.session_state.rsi_ob, rsi_os=st.session_state.rsi_os,
+    macd_f=st.session_state.macd_f, macd_s=st.session_state.macd_s, macd_sg=st.session_state.macd_sg,
+    bb_p=st.session_state.bb_p, bb_k=st.session_state.bb_k,
+    stoch_k=st.session_state.stoch_k, stoch_d=st.session_state.stoch_d,
+    atr_p=st.session_state.atr_p, cci_p=st.session_state.cci_p,
+    wr_p=st.session_state.wr_p, mfi_p=st.session_state.mfi_p, adx_p=st.session_state.adx_p,
+)
 
 # ============================================================
-# TAB 1: THAI STOCKS
+# VIEW ROUTER
 # ============================================================
-with tab1:
-    st.markdown("### 🇹🇭 สแกนหุ้นไทย — ตลาดหลักทรัพย์ (SET)")
-    
-    col_a, col_b, col_c = st.columns([2,2,1])
-    with col_a:
-        st.info(f"📋 มีหุ้นในฐานข้อมูล {len(THAI_STOCKS)} ตัว (SET50, SET100, mai)")
-    with col_c:
-        scan_thai = st.button("🔍 เริ่มสแกน", key="scan_thai", use_container_width=True)
+if st.session_state.view == "detail":
+    # ---- DEEP ANALYSIS VIEW ----
+    sym = st.session_state.detail_sym
+    mkt_key = st.session_state.detail_mkt
+    mkt = MARKETS[mkt_key]
+    cur = mkt["currency"]
 
-    if scan_thai or "thai_results" in st.session_state:
-        if scan_thai:
-            with st.spinner(""):
-                pb = st.progress(0)
-                st_txt = st.empty()
-                df_thai = scan_stocks(THAI_STOCKS, params, pb, st_txt)
-                pb.empty()
-                st_txt.empty()
-                st.session_state["thai_results"] = df_thai
-        
-        df_thai = st.session_state["thai_results"]
-        
-        # Filter
-        df_filtered = df_thai[
-            (df_thai["Score"] >= min_score) &
-            (df_thai["RiskReward"] >= min_rr) &
-            (df_thai["ADX"] >= min_adx) &
-            (df_thai["Signal"].isin(show_signal))
-        ].sort_values("Score", ascending=False)
+    if st.button("← กลับรายการหุ้น"):
+        st.session_state.view = "scan"
+        st.rerun()
 
-        # Summary metrics
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            buy_count = len(df_thai[df_thai["Signal_Class"] == "buy"])
-            st.metric("🟢 สัญญาณซื้อ", f"{buy_count} หุ้น")
-        with c2:
-            sell_count = len(df_thai[df_thai["Signal_Class"] == "sell"])
-            st.metric("🔴 สัญญาณขาย", f"{sell_count} หุ้น")
-        with c3:
-            avg_score = df_thai["Score"].mean()
-            st.metric("📊 คะแนนเฉลี่ย", f"{avg_score:.1f}/100")
-        with c4:
-            st.metric("🎯 ผ่านฟิลเตอร์", f"{len(df_filtered)} หุ้น")
+    # Load/compute
+    cached = st.session_state.scan_results.get(mkt_key)
+    if cached is not None and sym in cached["Symbol"].values:
+        row = cached[cached["Symbol"] == sym].iloc[0]
+        I, S = row["_I"], row["_S"]
+    else:
+        with st.spinner(f"กำลังวิเคราะห์ {sym}..."):
+            df = gen_candles(sym)
+            I  = compute_indicators(df, params)
+            S  = score(I, params)
 
-        st.markdown(f"### 📋 ผลการสแกน — พบ **{len(df_filtered)}** หุ้นที่น่าสนใจ")
-        
-        if len(df_filtered) > 0:
-            display_cols = ["Symbol", "Name", "Price", "Change%", "RSI", "ADX", "Score", "Signal", "BuyEntry", "Target1", "Target2", "StopLoss", "RiskReward"]
-            
-            def color_signal(val):
-                colors = {"🟢 ซื้อ": "#00b894", "🔴 ขาย": "#d63031", "🟡 เฝ้าระวัง": "#e17055", "⚪ ถือ": "#636e72"}
-                return f"color: {colors.get(val, '#fff')}; font-weight: bold"
+    pr = I["price"]
+    tag_cls = mkt["tag_class"]
+    score_cls = "score-h" if S["sc"]>=65 else "score-m" if S["sc"]>=45 else "score-l"
+    chg_cls = "change-up" if I["chg"]>=0 else "change-dn"
+    chip_cls = f"chip-{S['cls']}"
 
-            def color_change(val):
-                return "color: #00b894" if val >= 0 else "color: #d63031"
+    st.markdown(f"""
+    <div class="da-header">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+            <div>
+                <span class="da-symbol">{sym}</span>
+                <span class="da-market-tag {tag_cls}">{mkt['flag']} {mkt_key}</span><br>
+                <span style="font-size:0.78rem;color:#8892b0;">{dict(MARKETS[mkt_key]["stocks"]).get(sym,'')}</span>
+            </div>
+            <div class="score-ring {score_cls}" style="width:52px;height:52px;font-size:1rem;">{S['sc']}</div>
+        </div>
+        <div style="margin-top:12px;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:8px;">
+            <div>
+                <div class="da-price">{cur}{pr:.2f}</div>
+                <span class="sc-change {chg_cls}">{'+' if I['chg']>=0 else ''}{I['chg']:.2f}% วันนี้</span>
+            </div>
+            <div style="text-align:right;">
+                <div><span class="signal-chip {chip_cls}">{S['rec']}</span></div>
+                <div style="font-size:0.72rem;color:#8892b0;margin-top:4px;">
+                    R/R = <span style="color:#6c63ff;font-weight:700;">1:{S['rr']:.2f}</span>
+                    &nbsp;·&nbsp; ↑{S['up']}% / ↓{S['dn']}%
+                </div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-            def color_score(val):
-                if val >= 65: return "background-color: rgba(0,184,148,0.2); color: #00b894; font-weight:bold"
-                elif val <= 35: return "background-color: rgba(214,48,49,0.2); color: #d63031; font-weight:bold"
-                else: return "color: #fdcb6e"
+    # Targets
+    st.markdown('<div class="section-title">🎯 เป้าหมายราคา</div>', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="target-row">
+        <div class="tgt"><div class="tgt-label">จุดซื้อ</div><div class="tgt-val tgt-entry">{cur}{S['entry']:.2f}</div></div>
+        <div class="tgt"><div class="tgt-label">เป้า 1</div><div class="tgt-val tgt-t1">{cur}{S['t1']:.2f}</div></div>
+        <div class="tgt"><div class="tgt-label">เป้า 2</div><div class="tgt-val tgt-t2">{cur}{S['t2']:.2f}</div></div>
+        <div class="tgt"><div class="tgt-label">Stop Loss</div><div class="tgt-val tgt-sl">{cur}{S['sl']:.2f}</div></div>
+    </div>
+    """, unsafe_allow_html=True)
 
-            styled_df = df_filtered[display_cols].style \
-                .applymap(color_signal, subset=["Signal"]) \
-                .applymap(color_change, subset=["Change%"]) \
-                .applymap(color_score, subset=["Score"]) \
-                .format({
-                    "Price": "฿{:.2f}", "Change%": "{:+.2f}%",
-                    "RSI": "{:.1f}", "ADX": "{:.1f}", "Score": "{:.0f}",
-                    "BuyEntry": "฿{:.2f}", "Target1": "฿{:.2f}", "Target2": "฿{:.2f}",
-                    "StopLoss": "฿{:.2f}", "RiskReward": "{:.2f}x"
-                })
-            
-            st.dataframe(styled_df, use_container_width=True, height=400)
-            
-            # Click to analyze
-            st.markdown("---")
-            selected_thai = st.selectbox(
-                "🔍 เลือกหุ้นเพื่อวิเคราะห์เจาะลึก →",
-                ["-- เลือกหุ้น --"] + df_filtered["Symbol"].tolist(),
-                key="sel_thai"
+    # Indicators grid
+    st.markdown('<div class="section-title">📊 Indicators</div>', unsafe_allow_html=True)
+
+    def ind_cls(is_bull, is_bear):
+        return "bull" if is_bull else "bear" if is_bear else "neut"
+    def ind_lbl(is_bull, is_bear):
+        return "▲ Bullish" if is_bull else "▼ Bearish" if is_bear else "→ Neutral"
+
+    rsi_b = I["rsi"] < params["rsi_os"]; rsi_s = I["rsi"] > params["rsi_ob"]
+    macd_b = I["macd"] > I["macd_sig"]; macd_s = I["macd"] < I["macd_sig"]
+    bb_b = I["bbp"] < 0.2; bb_s = I["bbp"] > 0.8
+    stoch_b = I["sk"] < 20 and I["sk"] > I["sd"]; stoch_s = I["sk"] > 80 and I["sk"] < I["sd"]
+    cci_b = I["cci"] < -100; cci_s = I["cci"] > 100
+    wr_b = I["wr"] < -80; wr_s = I["wr"] > -20
+    mfi_b = I["mfi"] < 20; mfi_s = I["mfi"] > 80
+    adx_up = I["adx"] > 25 and I["dip"] > I["dim"]; adx_dn = I["adx"] > 25 and I["dim"] > I["dip"]
+    ma_b = I["price"] > I["sma20"] > I["sma50"]; ma_s = I["price"] < I["sma20"] < I["sma50"]
+    vwap_b = I["price"] > I["vwap"]; vwap_s = I["price"] < I["vwap"]
+
+    inds_html = '<div class="ind-grid">'
+    indicators = [
+        ("RSI", f"{I['rsi']:.1f}", rsi_b, rsi_s),
+        ("MACD Hist", f"{I['macd_h']:.4f}", macd_b, macd_s),
+        ("Bollinger %B", f"{I['bbp']:.2f}", bb_b, bb_s),
+        ("Stochastic %K", f"{I['sk']:.1f}", stoch_b, stoch_s),
+        ("CCI", f"{I['cci']:.1f}", cci_b, cci_s),
+        ("Williams %R", f"{I['wr']:.1f}", wr_b, wr_s),
+        ("MFI", f"{I['mfi']:.1f}", mfi_b, mfi_s),
+        ("ADX", f"{I['adx']:.1f}", adx_up, adx_dn),
+        ("MA Trend", "Up" if ma_b else "Down" if ma_s else "Flat", ma_b, ma_s),
+        ("VWAP", f"{cur}{I['vwap']:.2f}", vwap_b, vwap_s),
+        ("ATR", f"{cur}{I['atr']:.2f}", False, False),
+        ("Vol Ratio", f"{I['vol_r']:.2f}x", I["vol_r"]>1.5, I["vol_r"]<0.5),
+    ]
+    for lbl, val, is_b, is_s in indicators:
+        cls_ = ind_cls(is_b, is_s); lbl_ = ind_lbl(is_b, is_s)
+        inds_html += f'<div class="ind-box"><div class="ind-label">{lbl}</div><div class="ind-val {cls_}">{val}</div><div class="ind-status {cls_}">{lbl_}</div></div>'
+    inds_html += '</div>'
+    st.markdown(inds_html, unsafe_allow_html=True)
+
+    # Signal reasons
+    if S["bs"]:
+        st.markdown('<div class="section-title">🟢 สัญญาณซื้อ</div>', unsafe_allow_html=True)
+        for sig in S["bs"]:
+            st.markdown(f'<div class="sig-item sig-buy">✅ {sig}</div>', unsafe_allow_html=True)
+
+    if S["ss"]:
+        st.markdown('<div class="section-title">🔴 สัญญาณขาย</div>', unsafe_allow_html=True)
+        for sig in S["ss"]:
+            st.markdown(f'<div class="sig-item sig-sell">❌ {sig}</div>', unsafe_allow_html=True)
+
+    if S["ns"]:
+        st.markdown('<div class="section-title">⚪ ข้อมูลกลาง</div>', unsafe_allow_html=True)
+        for sig in S["ns"]:
+            st.markdown(f'<div class="sig-item sig-neut">ℹ️ {sig}</div>', unsafe_allow_html=True)
+
+    # Pivot Points
+    st.markdown('<div class="section-title">📐 Pivot Points</div>', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="pivot-row">
+        <div class="pvt-box"><div class="pvt-label">R2</div><div class="pvt-val" style="color:#ff7675;">{cur}{I['r2']:.2f}</div></div>
+        <div class="pvt-box"><div class="pvt-label">R1</div><div class="pvt-val" style="color:#fab1a0;">{cur}{I['r1']:.2f}</div></div>
+        <div class="pvt-box"><div class="pvt-label">PIVOT</div><div class="pvt-val" style="color:#74b9ff;">{cur}{I['pivot']:.2f}</div></div>
+        <div class="pvt-box"><div class="pvt-label">S1</div><div class="pvt-val" style="color:#55efc4;">{cur}{I['s1']:.2f}</div></div>
+        <div class="pvt-box"><div class="pvt-label">S2</div><div class="pvt-val" style="color:#00cec9;">{cur}{I['s2']:.2f}</div></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 52W Range
+    pct_52 = (I["price"]/I["52wh"])*100
+    st.markdown('<div class="section-title">📅 52-Week Range</div>', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style="background:#1a1a2e;border-radius:10px;padding:12px;">
+        <div style="display:flex;justify-content:space-between;font-size:0.72rem;color:#8892b0;margin-bottom:6px;">
+            <span>52W Low: {cur}{I['52wl']:.2f}</span>
+            <span>ตำแหน่งปัจจุบัน {pct_52:.1f}%</span>
+            <span>52W High: {cur}{I['52wh']:.2f}</span>
+        </div>
+        <div style="background:#2a2a4a;border-radius:4px;height:6px;position:relative;">
+            <div style="position:absolute;left:0;top:0;height:6px;width:{pct_52}%;
+                background:linear-gradient(90deg,#6c63ff,#00b894);border-radius:4px;"></div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown(f'<div class="update-bar"><span>อัปเดต: {datetime.now().strftime("%H:%M:%S")}</span><span>{"⚡ Settrade Live" if not USE_MOCK else "🔶 Mock Data"}</span></div>', unsafe_allow_html=True)
+
+else:
+    # ---- SCAN VIEW ----
+
+    # STEP 1: Market Selector
+    st.markdown('<div class="section-title">1️⃣ เลือกตลาดหุ้น</div>', unsafe_allow_html=True)
+
+    mkt_cols = st.columns(3)
+    for i, (mkt_key, mkt_data) in enumerate(MARKETS.items()):
+        with mkt_cols[i]:
+            selected = st.session_state.market == mkt_key
+            btn_label = f"{mkt_data['flag']}\n{mkt_key}\n{mkt_data['desc']}"
+            # Use button, highlight selected
+            btn_style = "background:linear-gradient(135deg,#1e1b4b,#1a1a3a);border:2px solid #6c63ff;" if selected else ""
+            if st.button(
+                f"{mkt_data['flag']} **{mkt_key}**\n{mkt_data['desc']}",
+                key=f"mkt_{mkt_key}",
+                use_container_width=True,
+                type="primary" if selected else "secondary",
+            ):
+                st.session_state.market = mkt_key
+                st.session_state.view = "scan"
+                st.rerun()
+
+    # Show selected market info
+    if st.session_state.market:
+        mkt_key = st.session_state.market
+        mkt = MARKETS[mkt_key]
+        cur = mkt["currency"]
+        n_stocks = len(mkt["stocks"])
+        st.markdown(f"""
+        <div style="background:#12122a;border:1px solid rgba(108,99,255,0.3);border-radius:10px;
+            padding:10px 14px;margin:8px 0 14px;display:flex;justify-content:space-between;align-items:center;">
+            <span style="color:#e2e8f0;font-size:0.85rem;">
+                {mkt['flag']} <strong>{mkt['name']}</strong> · {n_stocks} หุ้น · สกุลเงิน {cur}
+            </span>
+            <span style="font-size:0.72rem;color:#8892b0;">แตะ ▶ เพื่อสแกน</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Filter options
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            filt_sig = st.multiselect(
+                "สัญญาณ", ["🟢 ซื้อ","🟡 เฝ้าระวัง","⚪ ถือ","🔴 ขาย"],
+                default=["🟢 ซื้อ","🟡 เฝ้าระวัง"], key="filt_sig", label_visibility="collapsed",
+                placeholder="เลือกสัญญาณ"
             )
-            if selected_thai != "-- เลือกหุ้น --":
-                st.session_state["analyze_symbol"] = selected_thai
-                st.session_state["analyze_df"] = df_thai
+        with col_f2:
+            sort_by = st.selectbox("เรียงตาม", ["Score ↓","RSI ↑","Change% ↓","ADX ↓"],
+                key="sort_by", label_visibility="collapsed")
 
-        else:
-            st.warning("ไม่พบหุ้นที่ผ่านเงื่อนไขฟิลเตอร์ ลองปรับพารามิเตอร์ในแถบซ้ายมือ")
+        # SCAN BUTTON
+        st.markdown('<div class="section-title">2️⃣ เริ่มสแกน</div>', unsafe_allow_html=True)
+        scan_btn = st.button(f"🔍 สแกน {mkt['flag']} {mkt_key} ({n_stocks} หุ้น)", use_container_width=True)
 
-        st.markdown(f'<div class="update-time">🕐 อัปเดตล่าสุด: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</div>', unsafe_allow_html=True)
+        if scan_btn:
+            prog = st.progress(0)
+            with st.spinner(f"กำลังสแกน {mkt_key}..."):
+                df_res = scan_market(mkt_key, params, lambda v: prog.progress(v))
+            prog.empty()
+            st.session_state.scan_results[mkt_key] = df_res
 
-# ============================================================
-# TAB 2: INTERNATIONAL STOCKS
-# ============================================================
-with tab2:
-    st.markdown("### 🌏 สแกนหุ้นเทคโนโลยี — สหรัฐ 🇺🇸 & จีน 🇨🇳")
-    
-    col_x, col_y = st.columns([1,1])
-    with col_x:
-        country_filter = st.multiselect("เลือกประเทศ", ["US", "CN"], default=["US", "CN"])
-    
-    intl_filtered_list = [(s, n, c) for s, n, c in INTL_TECH_STOCKS if c in country_filter]
-    st.info(f"📋 มีหุ้น Tech {len(intl_filtered_list)} ตัว | 🇺🇸 US: {sum(1 for _,_,c in intl_filtered_list if c=='US')} | 🇨🇳 CN: {sum(1 for _,_,c in intl_filtered_list if c=='CN')}")
+        # RESULTS
+        df_res = st.session_state.scan_results.get(mkt_key)
+        if df_res is not None and len(df_res) > 0:
+            # Filter
+            sig_f = filt_sig if filt_sig else ["🟢 ซื้อ","🟡 เฝ้าระวัง","⚪ ถือ","🔴 ขาย"]
+            df_f = df_res[
+                (df_res["Score"] >= st.session_state.get("min_score", 60)) &
+                (df_res["RR"]    >= st.session_state.get("min_rr", 1.5)) &
+                (df_res["ADX"]   >= st.session_state.get("min_adx", 18)) &
+                (df_res["Signal"].isin(sig_f))
+            ].copy()
 
-    scan_intl = st.button("🔍 เริ่มสแกน", key="scan_intl", use_container_width=False)
+            sort_map = {"Score ↓":"Score","RSI ↑":"RSI","Change% ↓":"Change","ADX ↓":"ADX"}
+            sort_asc = {"Score ↓":False,"RSI ↑":True,"Change% ↓":False,"ADX ↓":False}
+            col_s = sort_map.get(sort_by,"Score")
+            df_f = df_f.sort_values(col_s, ascending=sort_asc.get(sort_by,False))
 
-    if scan_intl or "intl_results" in st.session_state:
-        if scan_intl:
-            with st.spinner(""):
-                pb2 = st.progress(0)
-                st2 = st.empty()
-                df_intl = scan_stocks(intl_filtered_list, params, pb2, st2)
-                pb2.empty(); st2.empty()
-                st.session_state["intl_results"] = df_intl
-        
-        df_intl = st.session_state["intl_results"]
-        
-        df_intl_f = df_intl[
-            (df_intl["Score"] >= min_score) &
-            (df_intl["RiskReward"] >= min_rr) &
-            (df_intl["Signal"].isin(show_signal))
-        ].sort_values("Score", ascending=False)
+            # Summary row
+            buy_n = len(df_res[df_res["SigCls"]=="buy"])
+            sell_n = len(df_res[df_res["SigCls"]=="sell"])
+            watch_n = len(df_res[df_res["SigCls"]=="watch"])
+            avg_sc = df_res["Score"].mean()
 
-        c1, c2, c3, c4 = st.columns(4)
-        with c1: st.metric("🟢 ซื้อ", f"{len(df_intl[df_intl['Signal_Class']=='buy'])} หุ้น")
-        with c2: st.metric("🔴 ขาย", f"{len(df_intl[df_intl['Signal_Class']=='sell'])} หุ้น")
-        with c3: st.metric("📊 คะแนนเฉลี่ย", f"{df_intl['Score'].mean():.1f}/100")
-        with c4: st.metric("🎯 ผ่านฟิลเตอร์", f"{len(df_intl_f)} หุ้น")
+            st.markdown(f"""
+            <div class="update-bar">
+                <span>พบ <strong style="color:#e2e8f0;">{len(df_f)}</strong> / {len(df_res)} หุ้น</span>
+                <span>🟢{buy_n} 🟡{watch_n} 🔴{sell_n} · avg {avg_sc:.0f}pt</span>
+            </div>
+            """, unsafe_allow_html=True)
 
-        # US vs CN breakdown
-        if len(df_intl_f) > 0:
-            col_us, col_cn = st.columns(2)
-            for flag, ctry, col in [("🇺🇸", "US", col_us), ("🇨🇳", "CN", col_cn)]:
-                sub = df_intl_f[df_intl_f["Country"] == ctry]
-                with col:
-                    st.markdown(f"#### {flag} หุ้น {ctry} ({len(sub)} ตัว)")
-                    if len(sub) > 0:
-                        for _, row in sub.iterrows():
-                            score_cls = "score-high" if row["Score"] >= 65 else "score-med" if row["Score"] >= 45 else "score-low"
-                            chg_color = "#00b894" if row["Change%"] >= 0 else "#d63031"
-                            st.markdown(f"""
-                            <div style="background:#1a1a2e; border-radius:10px; padding:10px; margin:5px 0; display:flex; justify-content:space-between; align-items:center;">
-                                <div>
-                                    <strong style="color:#e2e8f0; font-size:1rem;">{row['Symbol']}</strong>
-                                    <span style="color:#a8b2d8; font-size:0.8rem; margin-left:8px;">{row['Name']}</span><br>
-                                    <span style="color:#e2e8f0;">$ {row['Price']:.2f}</span>
-                                    <span style="color:{chg_color}; margin-left:8px;">{row['Change%']:+.2f}%</span>
-                                </div>
-                                <div style="text-align:right;">
-                                    <span class="score-badge {score_cls}">{row['Score']:.0f}</span><br>
-                                    <small style="color:#a8b2d8;">{row['Signal']}</small>
-                                </div>
+            st.markdown('<div class="section-title">3️⃣ ผลการสแกน — แตะหุ้นเพื่อวิเคราะห์เจาะลึก</div>', unsafe_allow_html=True)
+
+            if len(df_f) == 0:
+                st.markdown('<div class="empty-state">ไม่มีหุ้นผ่านเงื่อนไข<br>ลองปรับ Parameters ด้านบน</div>', unsafe_allow_html=True)
+            else:
+                for _, row in df_f.iterrows():
+                    chg_cls = "change-up" if row["Change"] >= 0 else "change-dn"
+                    chip_cls = f"chip-{row['SigCls']}"
+                    score_cls = "score-h" if row["Score"]>=65 else "score-m" if row["Score"]>=45 else "score-l"
+                    chg_sym = "+" if row["Change"] >= 0 else ""
+
+                    st.markdown(f"""
+                    <div class="stock-card {row['SigCls']}">
+                        <div class="sc-top">
+                            <div>
+                                <div class="sc-symbol">{row['Symbol']}</div>
+                                <div class="sc-name">{row['Name']}</div>
                             </div>
-                            """, unsafe_allow_html=True)
-                    else:
-                        st.info("ไม่มีหุ้นผ่านฟิลเตอร์")
+                            <div>
+                                <div class="sc-price">{cur}{row['Price']:.2f}</div>
+                                <div class="sc-change {chg_cls}">{chg_sym}{row['Change']:.2f}%</div>
+                            </div>
+                        </div>
+                        <div class="sc-bars">
+                            <div class="sc-bar-item">
+                                <div class="sc-bar-label">RSI</div>
+                                <div class="sc-bar-val {'bull' if row['RSI']<params['rsi_os'] else 'bear' if row['RSI']>params['rsi_ob'] else ''}">{row['RSI']:.0f}</div>
+                            </div>
+                            <div class="sc-bar-item">
+                                <div class="sc-bar-label">ADX</div>
+                                <div class="sc-bar-val">{row['ADX']:.0f}</div>
+                            </div>
+                            <div class="sc-bar-item">
+                                <div class="sc-bar-label">BB%</div>
+                                <div class="sc-bar-val {'bull' if row['BB']<0.2 else 'bear' if row['BB']>0.8 else ''}">{row['BB']:.2f}</div>
+                            </div>
+                            <div class="sc-bar-item">
+                                <div class="sc-bar-label">Vol</div>
+                                <div class="sc-bar-val {'bull' if row['VR']>1.5 else ''}">{row['VR']:.1f}x</div>
+                            </div>
+                        </div>
+                        <div class="target-row" style="margin-top:8px;">
+                            <div class="tgt"><div class="tgt-label">ซื้อ</div><div class="tgt-val tgt-entry" style="font-size:0.72rem;">{cur}{row['Entry']:.2f}</div></div>
+                            <div class="tgt"><div class="tgt-label">เป้า 1</div><div class="tgt-val tgt-t1" style="font-size:0.72rem;">{cur}{row['T1']:.2f}</div></div>
+                            <div class="tgt"><div class="tgt-label">เป้า 2</div><div class="tgt-val tgt-t2" style="font-size:0.72rem;">{cur}{row['T2']:.2f}</div></div>
+                            <div class="tgt"><div class="tgt-label">SL</div><div class="tgt-val tgt-sl" style="font-size:0.72rem;">{cur}{row['SL']:.2f}</div></div>
+                        </div>
+                        <div class="sc-bottom">
+                            <div>
+                                <span class="signal-chip {chip_cls}">{row['Signal']}</span>
+                                <span class="rr-badge" style="margin-left:8px;">R/R <span class="rr-val">1:{row['RR']:.2f}</span></span>
+                            </div>
+                            <div class="score-ring {score_cls}">{row['Score']:.0f}</div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-            st.markdown("---")
-            selected_intl = st.selectbox(
-                "🔍 เลือกหุ้นเพื่อวิเคราะห์เจาะลึก →",
-                ["-- เลือกหุ้น --"] + df_intl_f["Symbol"].tolist(),
-                key="sel_intl"
-            )
-            if selected_intl != "-- เลือกหุ้น --":
-                st.session_state["analyze_symbol"] = selected_intl
-                st.session_state["analyze_df"] = df_intl
-
-# ============================================================
-# TAB 3: DEEP ANALYSIS
-# ============================================================
-with tab3:
-    st.markdown("### 🔍 วิเคราะห์หุ้นเจาะลึก")
-
-    analyze_symbol = st.session_state.get("analyze_symbol", None)
-    analyze_df_src = st.session_state.get("analyze_df", None)
-
-    # Manual entry
-    manual_sym = st.text_input("หรือพิมพ์ชื่อหุ้นที่ต้องการวิเคราะห์:", placeholder="เช่น ADVANC, NVDA, BABA")
-    if manual_sym:
-        analyze_symbol = manual_sym.strip().upper()
-        analyze_df_src = None
-
-    if analyze_symbol:
-        st.markdown(f"#### 📌 กำลังวิเคราะห์: **{analyze_symbol}**")
-
-        # ดึงข้อมูล
-        if analyze_df_src is not None and analyze_symbol in analyze_df_src["Symbol"].values:
-            row = analyze_df_src[analyze_df_src["Symbol"] == analyze_symbol].iloc[0]
-            ind = row["_ind"]
-            scored = row["_scored"]
-        else:
-            with st.spinner(f"กำลังดึงข้อมูล {analyze_symbol}..."):
-                df_raw = generate_mock_candles(analyze_symbol)
-                ind = compute_all_indicators(df_raw, params)
-                scored = score_stock(ind, params)
-
-        price = ind["price"]
-        currency = "฿" if len(analyze_symbol) >= 3 and analyze_symbol.isalpha() and not any(c.isdigit() for c in analyze_symbol) else "$"
-
-        # Score display
-        score = scored["score"]
-        score_color = "#00b894" if score >= 65 else "#fdcb6e" if score >= 45 else "#d63031"
-        
-        col_score, col_rec, col_rr = st.columns([1,2,2])
-        with col_score:
-            st.markdown(f"""
-            <div style="text-align:center; padding:20px;">
-                <div style="font-size:3rem; font-weight:700; color:{score_color}; font-family:'Space Grotesk',sans-serif;">
-                    {score}
-                </div>
-                <div style="color:#a8b2d8; font-size:0.85rem;">คะแนนรวม (0-100)</div>
-                <div style="font-size:1.2rem; margin-top:8px;">{scored['recommendation']}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col_rec:
-            chg_color = "#00b894" if ind["change_pct"] >= 0 else "#d63031"
-            st.markdown(f"""
-            <div style="background:#1a1a2e; border-radius:12px; padding:16px; height:100%;">
-                <div style="font-size:1.8rem; font-weight:700; color:#e2e8f0; font-family:'Space Grotesk',sans-serif;">
-                    {currency}{price:.2f}
-                </div>
-                <div style="color:{chg_color}; font-size:1rem;">{ind['change_pct']:+.2f}% วันนี้</div>
-                <div style="color:#a8b2d8; font-size:0.8rem; margin-top:8px;">
-                    52W สูง: {currency}{ind['price_52wh']:.2f} | ต่ำ: {currency}{ind['price_52wl']:.2f}
-                </div>
-                <div style="color:#a8b2d8; font-size:0.8rem;">
-                    Volume Ratio: {ind['vol_ratio']:.2f}x
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col_rr:
-            st.markdown(f"""
-            <div style="background:#1a1a2e; border-radius:12px; padding:16px; height:100%;">
-                <div style="color:#a8b2d8; font-size:0.8rem; text-transform:uppercase;">Risk/Reward Ratio</div>
-                <div style="font-size:1.8rem; font-weight:700; color:#6c63ff; font-family:'Space Grotesk',sans-serif;">
-                    1 : {scored['risk_reward']:.2f}
-                </div>
-                <div style="color:#00b894; font-size:0.85rem;">📈 Upside: +{scored['upside']}%</div>
-                <div style="color:#d63031; font-size:0.85rem;">📉 Downside: -{scored['downside']}%</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        # Price targets
-        st.markdown("#### 🎯 เป้าหมายราคา")
-        t1, t2, t3, t4 = st.columns(4)
-        targets = [
-            ("จุดซื้อ", scored["buy_entry"], "#6c63ff"),
-            ("เป้าหมาย 1", scored["target1"], "#00b894"),
-            ("เป้าหมาย 2", scored["target2"], "#00b894"),
-            ("Stop Loss", scored["stop_loss"], "#d63031"),
-        ]
-        for col, (label, val, color) in zip([t1, t2, t3, t4], targets):
-            with col:
-                st.markdown(f"""
-                <div class="target-box" style="border-color: {color}40; background: {color}10;">
-                    <div class="target-label">{label}</div>
-                    <div class="target-value" style="color:{color};">{currency}{val:.2f}</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-        st.markdown("---")
-
-        # Indicator summary table
-        col_ind1, col_ind2 = st.columns(2)
-        
-        with col_ind1:
-            st.markdown("#### 📊 สรุป Indicators")
-            
-            def ind_status(condition_buy, condition_sell, val_str):
-                if condition_buy: return f"🟢 {val_str}"
-                elif condition_sell: return f"🔴 {val_str}"
-                else: return f"🟡 {val_str}"
-
-            indicators_display = [
-                ("RSI", ind_status(ind["rsi"] < params["rsi_oversold"], ind["rsi"] > params["rsi_overbought"], f"{ind['rsi']:.1f}")),
-                ("MACD", ind_status(ind["macd"] > ind["macd_signal"], ind["macd"] < ind["macd_signal"], f"{ind['macd']:.4f}")),
-                ("Stochastic %K", ind_status(ind["stoch_k"] < 20, ind["stoch_k"] > 80, f"{ind['stoch_k']:.1f}")),
-                ("Bollinger %B", ind_status(ind["bb_pct"] < 0.2, ind["bb_pct"] > 0.8, f"{ind['bb_pct']:.2f}")),
-                ("CCI", ind_status(ind["cci"] < -100, ind["cci"] > 100, f"{ind['cci']:.1f}")),
-                ("Williams %R", ind_status(ind["williams_r"] < -80, ind["williams_r"] > -20, f"{ind['williams_r']:.1f}")),
-                ("MFI", ind_status(ind["mfi"] < 20, ind["mfi"] > 80, f"{ind['mfi']:.1f}")),
-                ("ADX", ind_status(ind["adx"] > 25 and ind["di_plus"] > ind["di_minus"], ind["adx"] > 25 and ind["di_minus"] > ind["di_plus"], f"{ind['adx']:.1f}")),
-                ("VWAP", ind_status(price > ind["vwap"], price < ind["vwap"], f"{currency}{ind['vwap']:.2f}")),
-                ("Volume", ind_status(ind["vol_ratio"] > 1.5, ind["vol_ratio"] < 0.5, f"{ind['vol_ratio']:.2f}x")),
-                ("vs SMA20", ind_status(price > ind["sma20"], price < ind["sma20"], f"{currency}{ind['sma20']:.2f}")),
-                ("vs SMA50", ind_status(price > ind["sma50"], price < ind["sma50"], f"{currency}{ind['sma50']:.2f}")),
-                ("vs SMA200", ind_status(price > ind["sma200"], price < ind["sma200"], f"{currency}{ind['sma200']:.2f}")),
-                ("ATR", ("🟡" + f" {currency}{ind['atr']:.2f}")),
-                ("Pivot", f"🟡 {currency}{ind['pivot']:.2f}"),
-            ]
-            
-            for name, status in indicators_display:
-                st.markdown(f"""
-                <div class="indicator-row" style="padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05); display:flex; justify-content:space-between;">
-                    <span style="color:#a8b2d8; font-size:0.85rem;">{name}</span>
-                    <span style="font-size:0.85rem; color:#e2e8f0;">{status}</span>
-                </div>
-                """, unsafe_allow_html=True)
-
-        with col_ind2:
-            st.markdown("#### 🧠 เหตุผลการวิเคราะห์")
-            
-            if scored["buy_signals"]:
-                st.markdown("**🟢 สัญญาณซื้อ**")
-                for sig in scored["buy_signals"]:
-                    st.markdown(f'<div class="analysis-box buy-reason">✅ {sig}</div>', unsafe_allow_html=True)
-            
-            if scored["sell_signals"]:
-                st.markdown("**🔴 สัญญาณขาย**")
-                for sig in scored["sell_signals"]:
-                    st.markdown(f'<div class="analysis-box sell-reason">❌ {sig}</div>', unsafe_allow_html=True)
-            
-            if scored["neutral_signals"]:
-                st.markdown("**⚪ ข้อมูลกลาง**")
-                for sig in scored["neutral_signals"]:
-                    st.markdown(f'<div class="analysis-box neutral-reason">ℹ️ {sig}</div>', unsafe_allow_html=True)
-
-        # Pivot Levels
-        st.markdown("#### 📐 Pivot Points & Support/Resistance")
-        pc1, pc2, pc3, pc4, pc5 = st.columns(5)
-        pvt_data = [
-            ("R2 (แรงต้าน 2)", ind["r2"], "#ff7675"),
-            ("R1 (แรงต้าน 1)", ind["r1"], "#fab1a0"),
-            ("PIVOT", ind["pivot"], "#74b9ff"),
-            ("S1 (แนวรับ 1)", ind["s1"], "#55efc4"),
-            ("S2 (แนวรับ 2)", ind["s2"], "#00cec9"),
-        ]
-        for col, (label, val, color) in zip([pc1,pc2,pc3,pc4,pc5], pvt_data):
-            with col:
-                st.markdown(f"""
-                <div style="text-align:center; background:#1a1a2e; border-radius:8px; padding:10px;">
-                    <div style="font-size:0.7rem; color:#a8b2d8;">{label}</div>
-                    <div style="font-size:1rem; font-weight:700; color:{color}; font-family:'Space Grotesk',sans-serif;">{currency}{val:.2f}</div>
-                </div>
-                """, unsafe_allow_html=True)
+                    if st.button(f"🔍 วิเคราะห์ {row['Symbol']} เจาะลึก", key=f"btn_{row['Symbol']}_{mkt_key}", use_container_width=True):
+                        st.session_state.detail_sym = row["Symbol"]
+                        st.session_state.detail_mkt = mkt_key
+                        st.session_state.view = "detail"
+                        st.rerun()
 
     else:
-        st.info("👆 สแกนหุ้นในแท็บ 'หุ้นไทย' หรือ 'หุ้นต่างประเทศ' ก่อน แล้วคลิกเลือกหุ้นเพื่อวิเคราะห์เจาะลึก\nหรือพิมพ์ชื่อหุ้นด้านบนโดยตรง")
+        st.markdown("""
+        <div class="empty-state">
+            👆 เลือกตลาดหุ้นที่ต้องการสแกน<br>
+            <span style="font-size:0.75rem;">SET · US Tech · CN Tech</span>
+        </div>
+        """, unsafe_allow_html=True)
 
-# ============================================================
-# FOOTER
-# ============================================================
-st.markdown("---")
+# Footer
 st.markdown("""
-<div style="text-align:center; color:#636e72; font-size:0.8rem; padding:10px;">
-    ⚠️ <strong>คำเตือน:</strong> โปรแกรมนี้ใช้เพื่อการศึกษาและวิเคราะห์เท่านั้น ไม่ใช่คำแนะนำการลงทุน<br>
-    การลงทุนมีความเสี่ยง ผู้ลงทุนควรศึกษาข้อมูลก่อนตัดสินใจ<br>
-    🚀 <strong>AI Stock Scanner Pro</strong> | Powered by Settrade API + Technical Analysis Engine
+<div style="text-align:center;padding:20px 0 10px;color:#2a2a4a;font-size:0.7rem;">
+⚠️ ใช้เพื่อการศึกษาเท่านั้น · ไม่ใช่คำแนะนำการลงทุน
 </div>
 """, unsafe_allow_html=True)
