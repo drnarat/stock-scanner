@@ -1,59 +1,47 @@
 # -*- coding: utf-8 -*-
 
-# AI Stock Scanner Pro v3 - Real-time Edition
-
-# pip install streamlit pandas pandas_ta settrade-v2 yfinance
-
-# streamlit run stock_analyzer_v3.py –server.address=0.0.0.0 –server.port=8501
-
 import streamlit as st
 import pandas as pd
 import numpy as np
-import time, traceback
-from datetime import datetime, timedelta
-
-# — pandas_ta (เหมือน my_bot.py) —————————–
+import time
+from datetime import datetime
 
 try:
 import pandas_ta as ta
-PANDAS_TA_AVAILABLE = True
+TA_OK = True
 except ImportError:
-PANDAS_TA_AVAILABLE = False
-
-# — settrade_v2 (เหมือน my_bot.py) —————————
+TA_OK = False
 
 try:
 from settrade_v2 import Investor
-SETTRADE_AVAILABLE = True
+ST_OK = True
 except ImportError:
-SETTRADE_AVAILABLE = False
-
-# — yfinance (fallback หุ้นต่างประเทศ) ————————
+ST_OK = False
 
 try:
 import yfinance as yf
-YFINANCE_AVAILABLE = True
+YF_OK = True
 except ImportError:
-YFINANCE_AVAILABLE = False
+YF_OK = False
 
-# –––––––––––––––––––––––––––––––
+# —————————————————————
 
 # PAGE CONFIG
 
-# –––––––––––––––––––––––––––––––
+# —————————————————————
 
 st.set_page_config(
-page_title=“📈 Stock Scanner Pro”,
-page_icon=“📈”,
+page_title=“Stock Scanner Pro”,
+page_icon=”:chart_with_upwards_trend:”,
 layout=“centered”,
 initial_sidebar_state=“collapsed”,
 )
 
-# –––––––––––––––––––––––––––––––
+# —————————————————————
 
-# GLOBAL CSS
+# CSS
 
-# –––––––––––––––––––––––––––––––
+# —————————————————————
 
 st.markdown(”””
 
@@ -61,122 +49,98 @@ st.markdown(”””
 @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body,[class*="css"]{font-family:'Sarabun',sans-serif;background:#0d0d14;color:#e2e8f0}
-footer{visibility:hidden} #MainMenu{visibility:hidden}
+footer{visibility:hidden}#MainMenu{visibility:hidden}
 header[data-testid="stHeader"]{background:#0d0d14!important}
-div[data-testid="stSidebar"]{background:#12122a!important}
-
-/* -- APP HEADER -- */
-.app-header{background:linear-gradient(135deg,#12122a,#1a1035,#0f1f3a);border:1px solid rgba(108,99,255,.3);border-radius:16px;padding:18px 16px 14px;text-align:center;margin-bottom:16px;box-shadow:0 4px 24px rgba(108,99,255,.2)}
-.app-header h1{font-size:1.4rem;font-weight:700;color:#fff}
-.app-header .sub{font-size:.75rem;color:#8892b0;margin-top:4px}
-.live-dot{display:inline-block;width:8px;height:8px;background:#00b894;border-radius:50%;margin-right:5px;animation:pulse 1.5s infinite}
+.app-hdr{background:linear-gradient(135deg,#12122a,#1a1035,#0f1f3a);border:1px solid rgba(108,99,255,.3);border-radius:16px;padding:18px 16px 14px;text-align:center;margin-bottom:16px}
+.app-hdr h1{font-size:1.4rem;font-weight:700;color:#fff}
+.app-hdr .sub{font-size:.75rem;color:#8892b0;margin-top:4px}
+.ldot{display:inline-block;width:8px;height:8px;background:#00b894;border-radius:50%;margin-right:5px;animation:pulse 1.5s infinite}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(1.3)}}
-
-/* -- LOGIN CARD -- */
 .login-card{background:linear-gradient(135deg,#12122a,#1a1a2e);border:1px solid rgba(108,99,255,.35);border-radius:20px;padding:24px 20px;margin:8px 0 20px}
 .login-card h2{font-size:1.1rem;font-weight:700;color:#fff;margin-bottom:4px}
-.login-card .login-sub{font-size:.78rem;color:#8892b0;margin-bottom:20px;line-height:1.6}
+.login-sub{font-size:.78rem;color:#8892b0;margin-bottom:20px;line-height:1.6}
 .info-box{background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.25);border-radius:10px;padding:12px;margin-bottom:16px;font-size:.78rem;color:#a8b2d8;line-height:1.7}
-.info-box a{color:#6c63ff;text-decoration:none}
 .warn-box{background:rgba(253,203,110,.08);border:1px solid rgba(253,203,110,.3);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:.75rem;color:#fdcb6e;line-height:1.6}
-.success-box{background:rgba(0,184,148,.1);border:1px solid rgba(0,184,148,.4);border-radius:10px;padding:12px;font-size:.82rem;color:#00b894;line-height:1.6}
-.error-box{background:rgba(214,48,49,.1);border:1px solid rgba(214,48,49,.4);border-radius:10px;padding:12px;font-size:.82rem;color:#ff7675;line-height:1.6}
-
-/* -- SECTION TITLE -- */
-.section-title{font-size:.72rem;font-weight:700;color:#8892b0;text-transform:uppercase;letter-spacing:1px;margin:16px 0 10px;display:flex;align-items:center;gap:6px}
-.section-title::after{content:'';flex:1;height:1px;background:#2a2a4a}
-
-/* -- MARKET BUTTON -- */
-.mkt-label{text-align:center;padding:2px 0 6px}
-.mkt-flag{font-size:1.6rem;display:block}
-.mkt-name{font-size:.75rem;font-weight:700;color:#e2e8f0}
-.mkt-desc{font-size:.65rem;color:#8892b0}
-
-/* -- STOCK CARD -- */
-.stock-card{background:#1a1a2e;border:1px solid #2a2a4a;border-radius:14px;padding:14px;margin-bottom:10px;position:relative}
-.stock-card.buy {border-left:4px solid #00b894}
+.err-box{background:rgba(214,48,49,.1);border:1px solid rgba(214,48,49,.4);border-radius:10px;padding:12px;font-size:.82rem;color:#ff7675;line-height:1.6}
+.sec-title{font-size:.72rem;font-weight:700;color:#8892b0;text-transform:uppercase;letter-spacing:1px;margin:16px 0 10px;display:flex;align-items:center;gap:6px}
+.sec-title::after{content:'';flex:1;height:1px;background:#2a2a4a}
+.stock-card{background:#1a1a2e;border:1px solid #2a2a4a;border-radius:14px;padding:14px;margin-bottom:10px}
+.stock-card.buy{border-left:4px solid #00b894}
 .stock-card.sell{border-left:4px solid #d63031}
 .stock-card.watch{border-left:4px solid #fdcb6e}
 .stock-card.neutral{border-left:4px solid #636e72}
 .sc-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
-.sc-symbol{font-size:1.05rem;font-weight:700;color:#fff;font-family:'IBM Plex Mono',monospace}
+.sc-sym{font-size:1.05rem;font-weight:700;color:#fff;font-family:'IBM Plex Mono',monospace}
 .sc-name{font-size:.72rem;color:#8892b0;margin-top:2px}
 .sc-price{font-size:1.05rem;font-weight:700;color:#fff;text-align:right;font-family:'IBM Plex Mono',monospace}
-.sc-change{font-size:.72rem;text-align:right;margin-top:2px;font-weight:600}
-.change-up{color:#00b894} .change-dn{color:#d63031}
+.sc-chg{font-size:.72rem;text-align:right;margin-top:2px;font-weight:600}
+.cup{color:#00b894}.cdn{color:#d63031}
 .sc-bars{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
-.sc-bar-item{text-align:center}
-.sc-bar-label{font-size:.62rem;color:#636e72;text-transform:uppercase}
-.sc-bar-val{font-size:.8rem;font-weight:600;color:#e2e8f0;font-family:'IBM Plex Mono',monospace}
-.sc-bottom{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
-.score-ring{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700;font-family:'IBM Plex Mono',monospace;flex-shrink:0}
-.score-h{background:rgba(0,184,148,.2);border:2px solid #00b894;color:#00b894}
-.score-m{background:rgba(253,203,110,.2);border:2px solid #fdcb6e;color:#fdcb6e}
-.score-l{background:rgba(214,48,49,.2);border:2px solid #d63031;color:#d63031}
-.signal-chip{font-size:.75rem;font-weight:700;padding:4px 10px;border-radius:12px;display:inline-block}
-.chip-buy{background:rgba(0,184,148,.15);color:#00b894;border:1px solid #00b89460}
-.chip-sell{background:rgba(214,48,49,.15);color:#d63031;border:1px solid #d6303160}
-.chip-watch{background:rgba(253,203,110,.15);color:#fdcb6e;border:1px solid #fdcb6e60}
-.chip-neutral{background:rgba(99,110,114,.15);color:#636e72;border:1px solid #63637260}
-.target-row{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-top:8px}
+.sbi{text-align:center}
+.sbl{font-size:.62rem;color:#636e72;text-transform:uppercase}
+.sbv{font-size:.8rem;font-weight:600;color:#e2e8f0;font-family:'IBM Plex Mono',monospace}
+.sc-bot{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
+.sring{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700;font-family:'IBM Plex Mono',monospace;flex-shrink:0}
+.sh{background:rgba(0,184,148,.2);border:2px solid #00b894;color:#00b894}
+.sm{background:rgba(253,203,110,.2);border:2px solid #fdcb6e;color:#fdcb6e}
+.sl{background:rgba(214,48,49,.2);border:2px solid #d63031;color:#d63031}
+.chip{font-size:.75rem;font-weight:700;padding:4px 10px;border-radius:12px;display:inline-block}
+.chip-buy{background:rgba(0,184,148,.15);color:#00b894;border:1px solid rgba(0,184,148,.4)}
+.chip-sell{background:rgba(214,48,49,.15);color:#d63031;border:1px solid rgba(214,48,49,.4)}
+.chip-watch{background:rgba(253,203,110,.15);color:#fdcb6e;border:1px solid rgba(253,203,110,.4)}
+.chip-neutral{background:rgba(99,110,114,.15);color:#636e72;border:1px solid rgba(99,110,114,.4)}
+.trow{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-top:8px}
 .tgt{background:#12122a;border-radius:8px;padding:7px 4px;text-align:center}
-.tgt-label{font-size:.6rem;color:#636e72;text-transform:uppercase;letter-spacing:.5px}
-.tgt-val{font-size:.78rem;font-weight:700;font-family:'IBM Plex Mono',monospace;margin-top:2px}
-.tgt-entry{color:#6c63ff} .tgt-t1{color:#00b894} .tgt-t2{color:#00cec9} .tgt-sl{color:#d63031}
-
-/* -- DEEP ANALYSIS -- */
-.da-header{background:linear-gradient(135deg,#12122a,#1a1035);border:1px solid rgba(108,99,255,.4);border-radius:14px;padding:16px;margin-bottom:14px}
-.da-symbol{font-size:1.5rem;font-weight:700;color:#fff;font-family:'IBM Plex Mono',monospace}
+.tl{font-size:.6rem;color:#636e72;text-transform:uppercase;letter-spacing:.5px}
+.tv{font-size:.78rem;font-weight:700;font-family:'IBM Plex Mono',monospace;margin-top:2px}
+.te{color:#6c63ff}.t1{color:#00b894}.t2{color:#00cec9}.ts{color:#d63031}
+.da-hdr{background:linear-gradient(135deg,#12122a,#1a1035);border:1px solid rgba(108,99,255,.4);border-radius:14px;padding:16px;margin-bottom:14px}
+.da-sym{font-size:1.5rem;font-weight:700;color:#fff;font-family:'IBM Plex Mono',monospace}
 .da-price{font-size:1.8rem;font-weight:700;font-family:'IBM Plex Mono',monospace}
-.da-market-tag{display:inline-block;font-size:.68rem;font-weight:700;padding:3px 8px;border-radius:8px;margin-left:8px;vertical-align:middle}
-.tag-th{background:#1a3a1a;color:#00b894;border:1px solid #00b89440}
-.tag-us{background:#1a1a3a;color:#6c63ff;border:1px solid #6c63ff40}
-.tag-cn{background:#3a1a1a;color:#d63031;border:1px solid #d6303140}
-.tag-manual{background:#2a1a3a;color:#a29bfe;border:1px solid #a29bfe40}
+.da-tag{display:inline-block;font-size:.68rem;font-weight:700;padding:3px 8px;border-radius:8px;margin-left:8px;vertical-align:middle}
+.tth{background:#1a3a1a;color:#00b894;border:1px solid rgba(0,184,148,.25)}
+.tus{background:#1a1a3a;color:#6c63ff;border:1px solid rgba(108,99,255,.25)}
+.tcn{background:#3a1a1a;color:#d63031;border:1px solid rgba(214,48,49,.25)}
 .ind-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
-.ind-box{background:#1a1a2e;border:1px solid #2a2a4a;border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:2px}
-.ind-label{font-size:.65rem;color:#636e72;text-transform:uppercase;letter-spacing:.5px}
-.ind-val{font-size:.95rem;font-weight:700;font-family:'IBM Plex Mono',monospace}
-.ind-status{font-size:.65rem;margin-top:1px}
-.bull{color:#00b894} .bear{color:#d63031} .neut{color:#fdcb6e}
+.ibox{background:#1a1a2e;border:1px solid #2a2a4a;border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:2px}
+.ilabel{font-size:.65rem;color:#636e72;text-transform:uppercase;letter-spacing:.5px}
+.ival{font-size:.95rem;font-weight:700;font-family:'IBM Plex Mono',monospace}
+.ist{font-size:.65rem;margin-top:1px}
+.bull{color:#00b894}.bear{color:#d63031}.neut{color:#fdcb6e}
 .sig-item{border-radius:10px;padding:9px 12px;margin-bottom:6px;font-size:.8rem;line-height:1.5;border-left:3px solid}
 .sig-buy{background:rgba(0,184,148,.08);border-color:#00b894;color:#b2f5ea}
 .sig-sell{background:rgba(214,48,49,.08);border-color:#d63031;color:#fed7d7}
 .sig-neut{background:rgba(99,110,114,.08);border-color:#636e72;color:#cbd5e0}
-.pivot-row{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:14px;-webkit-overflow-scrolling:touch}
-.pvt-box{flex-shrink:0;background:#1a1a2e;border-radius:10px;padding:8px 12px;text-align:center;min-width:72px;border:1px solid #2a2a4a}
-.pvt-label{font-size:.6rem;color:#636e72;text-transform:uppercase}
-.pvt-val{font-size:.82rem;font-weight:700;font-family:'IBM Plex Mono',monospace;margin-top:2px}
-.fundamental-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
-.fund-box{background:#1a1a2e;border:1px solid #2a2a4a;border-radius:10px;padding:10px}
-.fund-label{font-size:.65rem;color:#636e72;text-transform:uppercase;letter-spacing:.5px}
-.fund-val{font-size:1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#e2e8f0;margin-top:2px}
-.fund-desc{font-size:.65rem;color:#8892b0;margin-top:2px}
-.update-bar{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#12122a;border-radius:10px;font-size:.7rem;color:#636e72;margin-bottom:12px}
-
-/* -- BUTTONS -- */
+.pvt-row{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:14px;-webkit-overflow-scrolling:touch}
+.pvt{flex-shrink:0;background:#1a1a2e;border-radius:10px;padding:8px 12px;text-align:center;min-width:72px;border:1px solid #2a2a4a}
+.pvtl{font-size:.6rem;color:#636e72;text-transform:uppercase}
+.pvtv{font-size:.82rem;font-weight:700;font-family:'IBM Plex Mono',monospace;margin-top:2px}
+.fund-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.fbox{background:#1a1a2e;border:1px solid #2a2a4a;border-radius:10px;padding:10px}
+.flabel{font-size:.65rem;color:#636e72;text-transform:uppercase;letter-spacing:.5px}
+.fval{font-size:1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#e2e8f0;margin-top:2px}
+.fdesc{font-size:.65rem;color:#8892b0;margin-top:2px}
+.upd-bar{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#12122a;border-radius:10px;font-size:.7rem;color:#636e72;margin-bottom:12px}
 div.stButton>button{width:100%;background:linear-gradient(135deg,#6c63ff,#4f46e5);color:#fff;border:none;border-radius:12px;padding:14px;font-size:.95rem;font-weight:700;font-family:'Sarabun',sans-serif;box-shadow:0 4px 16px rgba(108,99,255,.35);transition:all .2s}
 div.stButton>button:hover{opacity:.9;transform:translateY(-1px)}
-div.stButton>button:active{transform:scale(.97)}
-div[data-testid="stTextInput"]>div>div>input{background:#1a1a2e!important;border:1px solid #2a2a4a!important;border-radius:10px!important;color:#e2e8f0!important;font-family:'IBM Plex Mono',monospace!important}
-div[data-testid="stSelectbox"]>label,div[data-testid="stSlider"]>label{color:#8892b0!important;font-size:.82rem!important}
+div[data-testid="stTextInput"]>div>div>input{background:#1a1a2e!important;border:1px solid #2a2a4a!important;border-radius:10px!important;color:#e2e8f0!important}
 div[data-testid="stExpander"]{background:#1a1a2e;border:1px solid #2a2a4a!important;border-radius:12px!important;margin-bottom:8px}
-div[data-testid="stTabs"]>div>div[role="tablist"]>button{color:#8892b0!important;font-size:.82rem!important}
-div[data-testid="stTabs"]>div>div[role="tablist"]>button[aria-selected="true"]{color:#e2e8f0!important;border-bottom-color:#6c63ff!important}
+div[data-testid="stSidebar"]{background:#12122a!important}
 </style>
 
 “””, unsafe_allow_html=True)
 
-# –––––––––––––––––––––––––––––––
+# —————————————————————
 
 # STOCK UNIVERSE
 
-# –––––––––––––––––––––––––––––––
+# —————————————————————
 
 MARKETS = {
 “SET”: {
-“flag”:“🇹🇭”,“name”:“ตลาดหุ้นไทย”,“desc”:“SET50/100/mai”,“currency”:“฿”,“tag”:“tag-th”,
-“stocks”:[
+“flag”: “TH”, “name”: “ตลาดหุ้นไทย”, “desc”: “SET50/100/mai”,
+“currency”: “฿”, “tag”: “tth”,
+“stocks”: [
 (“KBANK”,“กสิกรไทย”),(“BBL”,“กรุงเทพ”),(“SCB”,“ไทยพาณิชย์”),
 (“KTB”,“กรุงไทย”),(“BAY”,“กรุงศรี”),(“TISCO”,“ทิสโก้”),(“KKP”,“เกียรตินาคิน”),
 (“PTT”,“ปตท.”),(“PTTEP”,“ปตท.สผ.”),(“GULF”,“กัลฟ์”),(“GPSC”,“โกลบอลเพาเวอร์”),
@@ -194,8 +158,9 @@ MARKETS = {
 ],
 },
 “US”: {
-“flag”:“🇺🇸”,“name”:“US Tech”,“desc”:“NASDAQ/NYSE”,“currency”:”$”,“tag”:“tag-us”,
-“stocks”:[
+“flag”: “US”, “name”: “US Tech”, “desc”: “NASDAQ/NYSE”,
+“currency”: “$”, “tag”: “tus”,
+“stocks”: [
 (“AAPL”,“Apple”),(“MSFT”,“Microsoft”),(“NVDA”,“NVIDIA”),(“GOOGL”,“Alphabet”),
 (“META”,“Meta”),(“AMZN”,“Amazon”),(“TSLA”,“Tesla”),(“AMD”,“AMD”),
 (“INTC”,“Intel”),(“AVGO”,“Broadcom”),(“QCOM”,“Qualcomm”),(“MU”,“Micron”),
@@ -204,8 +169,9 @@ MARKETS = {
 ],
 },
 “CN”: {
-“flag”:“🇨🇳”,“name”:“CN Tech”,“desc”:“NYSE/NASDAQ ADR”,“currency”:”$”,“tag”:“tag-cn”,
-“stocks”:[
+“flag”: “CN”, “name”: “CN Tech”, “desc”: “NYSE/NASDAQ ADR”,
+“currency”: “$”, “tag”: “tcn”,
+“stocks”: [
 (“BABA”,“Alibaba”),(“JD”,“JD.com”),(“BIDU”,“Baidu”),(“NTES”,“NetEase”),
 (“PDD”,“Pinduoduo”),(“TCOM”,“Trip.com”),(“NIO”,“NIO”),(“XPEV”,“XPeng”),
 (“LI”,“Li Auto”),(“BILI”,“Bilibili”),(“WB”,“Weibo”),(“FUTU”,“Futu”),
@@ -213,50 +179,36 @@ MARKETS = {
 },
 }
 
-# –––––––––––––––––––––––––––––––
+# —————————————————————
 
 # SESSION STATE
 
-# –––––––––––––––––––––––––––––––
+# —————————————————————
 
-defaults = dict(
-logged_in=False, market_api=None, realtime_api=None,
-app_id=””, app_secret=””, app_code=””, broker_id=””,
-market=None, scan_results={}, view=“login”,
-detail_sym=None, detail_mkt=None,
-)
-for k, v in defaults.items():
+for k, v in [
+(“logged_in”, False), (“market_api”, None), (“realtime_api”, None),
+(“market”, None), (“scan_results”, {}), (“view”, “login”),
+(“detail_sym”, None), (“detail_mkt”, None),
+(“prefill_id”, “”), (“prefill_secret”, “”),
+(“prefill_code”, “SANDBOX”), (“prefill_broker”, “SANDBOX”),
+]:
 if k not in st.session_state:
 st.session_state[k] = v
 
-# –––––––––––––––––––––––––––––––
+# —————————————————————
 
-# TECHNICAL INDICATOR FUNCTIONS
+# INDICATORS
 
-# –––––––––––––––––––––––––––––––
+# —————————————————————
 
-# –––––––––––––––––––––––––––––––
-
-# INDICATOR HELPERS - ใช้ pandas_ta เหมือน my_bot.py
-
-# fallback คำนวณเองถ้าไม่มี pandas_ta
-
-# –––––––––––––––––––––––––––––––
-
-def _safe(series, fallback=0.0):
-“”“ดึงค่าล่าสุดจาก Series อย่างปลอดภัย”””
+def _safe(s, fallback=0.0):
 try:
-v = series.iloc[-1]
+v = s.iloc[-1] if hasattr(s, “iloc”) else s
 return float(v) if pd.notna(v) else fallback
-except:
+except Exception:
 return fallback
 
-def compute_all(df, p):
-“””
-คำนวณ indicator ทั้งหมด
-df ต้องมีคอลัมน์: close, high, low, open, volume
-ใช้ pandas_ta ถ้าติดตั้งไว้ (เหมือน my_bot.py) มิฉะนั้น fallback numpy
-“””
+def compute_indicators(df, p):
 c = df[“close”].astype(float)
 h = df[“high”].astype(float)
 l = df[“low”].astype(float)
@@ -264,1186 +216,842 @@ v = df[“volume”].astype(float)
 I = {}
 
 ```
-if PANDAS_TA_AVAILABLE:
-    # -- ใช้ pandas_ta (เหมือน my_bot.py) ------------------
-
-    # SMA
-    I[f"sma{p['sma_s']}"] = _safe(ta.sma(c, length=p["sma_s"]))
-    I[f"sma{p['sma_m']}"] = _safe(ta.sma(c, length=p["sma_m"]))
-    I[f"sma{p['sma_l']}"] = _safe(ta.sma(c, length=p["sma_l"]))
-    I["ema_f"] = _safe(ta.ema(c, length=p["ema_f"]))
-    I["ema_s"] = _safe(ta.ema(c, length=p["ema_s"]))
-
-    # RSI
-    I["rsi"] = _safe(ta.rsi(c, length=p["rsi_p"]))
-
-    # MACD
+if TA_OK:
+    I["sma_s"] = _safe(ta.sma(c, length=p["sma_s"]))
+    I["sma_m"] = _safe(ta.sma(c, length=p["sma_m"]))
+    I["sma_l"] = _safe(ta.sma(c, length=p["sma_l"]))
+    I["rsi"]   = _safe(ta.rsi(c, length=p["rsi_p"]))
     macd_df = ta.macd(c, fast=p["macd_f"], slow=p["macd_s"], signal=p["macd_sg"])
     if macd_df is not None and not macd_df.empty:
         cols = macd_df.columns.tolist()
-        I["macd"]     = _safe(macd_df[cols[0]])
+        I["macd"]  = _safe(macd_df[cols[0]])
+        I["macd_h"] = _safe(macd_df[cols[1]])
         I["macd_sig"] = _safe(macd_df[cols[2]])
-        I["macd_h"]   = _safe(macd_df[cols[1]])
     else:
-        I["macd"] = I["macd_sig"] = I["macd_h"] = 0.0
-
-    # Bollinger Bands - เหมือน my_bot.py ใช้ชื่อคอลัมน์ BBL BBM BBU BBB BBP
+        I["macd"] = I["macd_h"] = I["macd_sig"] = 0.0
     bb = ta.bbands(c, length=p["bb_p"], std=p["bb_k"])
     if bb is not None and not bb.empty:
-        bcols = bb.columns.tolist()  # BBL_x_y, BBM_x_y, BBU_x_y, BBB_x_y, BBP_x_y
-        bbl_v = _safe(bb[bcols[0]]); bbm_v = _safe(bb[bcols[1]])
-        bbu_v = _safe(bb[bcols[2]])
-        I["bbl"] = bbl_v; I["bbm"] = bbm_v; I["bbu"] = bbu_v
-        I["bbp"] = _safe(bb[bcols[4]])
-        I["bb_width"] = ((bbu_v - bbl_v) / (bbm_v + 1e-9)) * 100
+        bc = bb.columns.tolist()
+        I["bbl"] = _safe(bb[bc[0]]); I["bbm"] = _safe(bb[bc[1]]); I["bbu"] = _safe(bb[bc[2]])
+        I["bbp"] = _safe(bb[bc[4]])
+        I["bb_width"] = ((I["bbu"] - I["bbl"]) / (I["bbm"] + 1e-9)) * 100
     else:
-        I["bbl"] = I["bbm"] = I["bbu"] = c.iloc[-1]
-        I["bbp"] = 0.5; I["bb_width"] = 0.0
-
-    # Stochastic
+        I["bbl"] = I["bbm"] = I["bbu"] = c.iloc[-1]; I["bbp"] = 0.5; I["bb_width"] = 0.0
     stoch = ta.stoch(h, l, c, k=p["stoch_k"], d=p["stoch_d"])
     if stoch is not None and not stoch.empty:
-        scols = stoch.columns.tolist()
-        I["sk"] = _safe(stoch[scols[0]])
-        I["sd"] = _safe(stoch[scols[1]])
+        sc2 = stoch.columns.tolist()
+        I["sk"] = _safe(stoch[sc2[0]]); I["sd"] = _safe(stoch[sc2[1]])
     else:
         I["sk"] = I["sd"] = 50.0
-
-    # ATR
     I["atr"] = _safe(ta.atr(h, l, c, length=p["atr_p"]))
-
-    # CCI
     I["cci"] = _safe(ta.cci(h, l, c, length=p["cci_p"]))
-
-    # Williams %R
-    wr = ta.willr(h, l, c, length=p["wr_p"])
-    I["wr"] = _safe(wr)
-
-    # MFI
-    mfi = ta.mfi(h, l, c, v, length=p["mfi_p"])
-    I["mfi"] = _safe(mfi)
-
-    # ADX
+    I["wr"]  = _safe(ta.willr(h, l, c, length=p["wr_p"]))
+    I["mfi"] = _safe(ta.mfi(h, l, c, v, length=p["mfi_p"]))
     adx_df = ta.adx(h, l, c, length=p["adx_p"])
     if adx_df is not None and not adx_df.empty:
-        acols = adx_df.columns.tolist()
-        I["adx"] = _safe(adx_df[acols[0]])
-        I["dip"] = _safe(adx_df[acols[1]])
-        I["dim"] = _safe(adx_df[acols[2]])
+        ac = adx_df.columns.tolist()
+        I["adx"] = _safe(adx_df[ac[0]]); I["dip"] = _safe(adx_df[ac[1]]); I["dim"] = _safe(adx_df[ac[2]])
     else:
         I["adx"] = I["dip"] = I["dim"] = 20.0
-
-    # OBV
     obv = ta.obv(c, v)
-    I["obv_trend"] = "up" if _safe(obv) > _safe(obv.shift(5)) else "down"
-
-    # VWAP (pandas_ta ต้องการ index เป็น datetime)
+    I["obv_up"] = _safe(obv) > _safe(obv.shift(5))
     try:
         vwap_s = ta.vwap(h, l, c, v)
-        I["vwap"] = _safe(vwap_s) if vwap_s is not None else c.iloc[-1]
-    except:
-        I["vwap"] = c.iloc[-1]
-
-    # Ichimoku
+        I["vwap"] = _safe(vwap_s) if vwap_s is not None else float(c.iloc[-1])
+    except Exception:
+        I["vwap"] = float(c.iloc[-1])
     try:
         ichi = ta.ichimoku(h, l, c)
-        if ichi is not None and len(ichi) >= 2:
-            ichi_df = ichi[0]
-            icols = ichi_df.columns.tolist()
-            I["ichi_conv"] = _safe(ichi_df[icols[0]])
-            I["ichi_base"] = _safe(ichi_df[icols[1]])
-            span_df = ichi[1]
-            scols2 = span_df.columns.tolist()
-            I["ichi_sa"]   = _safe(span_df[scols2[0]]) if len(scols2) > 0 else c.iloc[-1]
-            I["ichi_sb"]   = _safe(span_df[scols2[1]]) if len(scols2) > 1 else c.iloc[-1]
+        if ichi and len(ichi) >= 2:
+            idf = ichi[0]; ic = idf.columns.tolist()
+            I["ichi_conv"] = _safe(idf[ic[0]]); I["ichi_base"] = _safe(idf[ic[1]])
+            sdf = ichi[1]; sc3 = sdf.columns.tolist()
+            I["ichi_sa"] = _safe(sdf[sc3[0]]) if sc3 else float(c.iloc[-1])
+            I["ichi_sb"] = _safe(sdf[sc3[1]]) if len(sc3) > 1 else float(c.iloc[-1])
         else:
-            raise ValueError("ichi empty")
-    except:
-        I["ichi_conv"] = I["ichi_base"] = I["ichi_sa"] = I["ichi_sb"] = c.iloc[-1]
-
+            raise ValueError("empty")
+    except Exception:
+        I["ichi_conv"] = I["ichi_base"] = I["ichi_sa"] = I["ichi_sb"] = float(c.iloc[-1])
 else:
-    # -- Fallback: คำนวณเองด้วย numpy/pandas -----------------
+    # numpy fallback
     def sma(s, n): return s.rolling(n).mean()
     def ema(s, n): return s.ewm(span=n, adjust=False).mean()
-
-    I[f"sma{p['sma_s']}"] = _safe(sma(c, p["sma_s"]))
-    I[f"sma{p['sma_m']}"] = _safe(sma(c, p["sma_m"]))
-    I[f"sma{p['sma_l']}"] = _safe(sma(c, p["sma_l"]))
-    I["ema_f"] = _safe(ema(c, p["ema_f"]))
-    I["ema_s"] = _safe(ema(c, p["ema_s"]))
-
-    d = c.diff()
-    g = d.clip(lower=0).rolling(p["rsi_p"]).mean()
-    lo_ = (-d.clip(upper=0)).rolling(p["rsi_p"]).mean()
-    I["rsi"] = _safe(100 - 100 / (1 + g / (lo_ + 1e-9)))
-
-    ef = ema(c, p["macd_f"]); es = ema(c, p["macd_s"])
-    ml = ef - es; ms = ema(ml, p["macd_sg"])
+    I["sma_s"] = _safe(sma(c, p["sma_s"])); I["sma_m"] = _safe(sma(c, p["sma_m"])); I["sma_l"] = _safe(sma(c, p["sma_l"]))
+    d = c.diff(); g = d.clip(lower=0).rolling(p["rsi_p"]).mean(); lo = (-d.clip(upper=0)).rolling(p["rsi_p"]).mean()
+    I["rsi"] = _safe(100 - 100/(1 + g/(lo + 1e-9)))
+    ml = ema(c, p["macd_f"]) - ema(c, p["macd_s"]); ms = ema(ml, p["macd_sg"])
     I["macd"] = _safe(ml); I["macd_sig"] = _safe(ms); I["macd_h"] = _safe(ml - ms)
-
     bm = sma(c, p["bb_p"]); bstd = c.rolling(p["bb_p"]).std()
-    bu = bm + p["bb_k"] * bstd; bl = bm - p["bb_k"] * bstd
-    I["bbu"] = _safe(bu); I["bbm"] = _safe(bm); I["bbl"] = _safe(bl)
-    I["bbp"] = _safe((c - bl) / (bu - bl + 1e-9))
-    I["bb_width"] = _safe((bu - bl) / (bm + 1e-9) * 100)
-
+    I["bbu"] = _safe(bm + p["bb_k"]*bstd); I["bbm"] = _safe(bm); I["bbl"] = _safe(bm - p["bb_k"]*bstd)
+    I["bbp"] = _safe((c - (bm - p["bb_k"]*bstd)) / (2*p["bb_k"]*bstd + 1e-9))
+    I["bb_width"] = (I["bbu"] - I["bbl"]) / (I["bbm"] + 1e-9) * 100
     ll = l.rolling(p["stoch_k"]).min(); hh = h.rolling(p["stoch_k"]).max()
-    sk = 100 * (c - ll) / (hh - ll + 1e-9)
+    sk = 100*(c - ll)/(hh - ll + 1e-9)
     I["sk"] = _safe(sk); I["sd"] = _safe(sk.rolling(p["stoch_d"]).mean())
-
-    tr = pd.concat([h-l,(h-c.shift()).abs(),(l-c.shift()).abs()],axis=1).max(axis=1)
+    tr = pd.concat([h-l, (h-c.shift()).abs(), (l-c.shift()).abs()], axis=1).max(axis=1)
     I["atr"] = _safe(tr.rolling(p["atr_p"]).mean())
-
     tp = (h+l+c)/3; cm = tp.rolling(p["cci_p"]).mean()
-    mad = tp.rolling(p["cci_p"]).apply(lambda x: np.abs(x-x.mean()).mean())
-    I["cci"] = _safe((tp-cm)/(0.015*mad+1e-9))
-    I["wr"]  = _safe(-100*(h.rolling(p["wr_p"]).max()-c)/(h.rolling(p["wr_p"]).max()-l.rolling(p["wr_p"]).min()+1e-9))
-
+    mad = tp.rolling(p["cci_p"]).apply(lambda x: np.abs(x - x.mean()).mean())
+    I["cci"] = _safe((tp - cm)/(0.015*mad + 1e-9))
+    I["wr"] = _safe(-100*(h.rolling(p["wr_p"]).max()-c)/(h.rolling(p["wr_p"]).max()-l.rolling(p["wr_p"]).min()+1e-9))
     mtp = (h+l+c)/3; mf = mtp*v
     pos = mf.where(mtp>mtp.shift(),0).rolling(p["mfi_p"]).sum()
     neg = mf.where(mtp<mtp.shift(),0).rolling(p["mfi_p"]).sum()
-    I["mfi"] = _safe(100 - 100/(1+pos/(neg+1e-9)))
-
+    I["mfi"] = _safe(100 - 100/(1 + pos/(neg+1e-9)))
     dmp = (h-h.shift()).clip(lower=0); dmm = (l.shift()-l).clip(lower=0)
     dmp2 = dmp.where(dmp>dmm,0); dmm2 = dmm.where(dmm>dmp,0)
     atr14 = tr.rolling(p["adx_p"]).mean()
     dip = 100*dmp2.rolling(p["adx_p"]).mean()/(atr14+1e-9)
     dim = 100*dmm2.rolling(p["adx_p"]).mean()/(atr14+1e-9)
-    dx = 100*(dip-dim).abs()/(dip+dim+1e-9)
-    I["adx"] = _safe(dx.rolling(p["adx_p"]).mean())
+    I["adx"] = _safe((100*(dip-dim).abs()/(dip+dim+1e-9)).rolling(p["adx_p"]).mean())
     I["dip"] = _safe(dip); I["dim"] = _safe(dim)
-
     obv = (v*np.sign(c.diff()).fillna(0)).cumsum()
-    I["obv_trend"] = "up" if obv.iloc[-1]>obv.iloc[-5] else "down"
+    I["obv_up"] = float(obv.iloc[-1]) > float(obv.iloc[-5])
     I["vwap"] = _safe((tp*v).cumsum()/(v.cumsum()+1e-9))
-
-    n1,n2,n3 = 9,26,52
-    conv = (h.rolling(n1).max()+l.rolling(n1).min())/2
-    base = (h.rolling(n2).max()+l.rolling(n2).min())/2
+    conv = (h.rolling(9).max()+l.rolling(9).min())/2
+    base = (h.rolling(26).max()+l.rolling(26).min())/2
     I["ichi_conv"] = _safe(conv); I["ichi_base"] = _safe(base)
-    I["ichi_sa"] = _safe(((conv+base)/2).shift(n2))
-    I["ichi_sb"] = _safe(((h.rolling(n3).max()+l.rolling(n3).min())/2).shift(n2))
+    I["ichi_sa"] = _safe(((conv+base)/2).shift(26))
+    I["ichi_sb"] = _safe(((h.rolling(52).max()+l.rolling(52).min())/2).shift(26))
 
-# -- ค่าที่เหมือนกันทั้งสองกรณี -----------------------------
 I["vol_avg"] = float(v.rolling(20).mean().iloc[-1]) if len(v) >= 20 else float(v.mean())
-I["vol_r"]   = float(v.iloc[-1]) / (I["vol_avg"] + 1)
-I["price"]   = float(c.iloc[-1])
-I["open"]    = float(df["open"].iloc[-1]) if "open" in df.columns else I["price"]
-I["high_d"]  = float(h.iloc[-1])
-I["low_d"]   = float(l.iloc[-1])
-I["chg"]     = (c.iloc[-1]/c.iloc[-2]-1)*100 if len(c)>=2 else 0.0
-I["chg_5d"]  = (c.iloc[-1]/c.iloc[-5]-1)*100 if len(c)>=5 else 0.0
-I["chg_20d"] = (c.iloc[-1]/c.iloc[-20]-1)*100 if len(c)>=20 else 0.0
-I["52wh"]    = float(h.rolling(min(252,len(h))).max().iloc[-1])
-I["52wl"]    = float(l.rolling(min(252,len(l))).min().iloc[-1])
+I["vol_r"] = float(v.iloc[-1]) / (I["vol_avg"] + 1)
+I["price"] = float(c.iloc[-1])
+I["open"]  = float(df["open"].iloc[-1]) if "open" in df.columns else I["price"]
+I["high_d"] = float(h.iloc[-1]); I["low_d"] = float(l.iloc[-1])
+I["chg"]   = (float(c.iloc[-1])/float(c.iloc[-2])-1)*100 if len(c)>=2 else 0.0
+I["chg_5d"] = (float(c.iloc[-1])/float(c.iloc[-5])-1)*100 if len(c)>=5 else 0.0
+I["chg_20d"] = (float(c.iloc[-1])/float(c.iloc[-20])-1)*100 if len(c)>=20 else 0.0
+I["52wh"] = float(h.rolling(min(252,len(h))).max().iloc[-1])
+I["52wl"] = float(l.rolling(min(252,len(l))).min().iloc[-1])
 pv = (I["high_d"]+I["low_d"]+I["price"])/3
-rng = I["high_d"]-I["low_d"]
+rng = I["high_d"] - I["low_d"]
 I["pivot"]=pv; I["r1"]=2*pv-I["low_d"]; I["r2"]=pv+rng
 I["s1"]=2*pv-I["high_d"]; I["s2"]=pv-rng
-I["atr_pct"] = I.get("atr",0)/I["price"]*100
-
-# ตรวจ NaN / Inf ทั้งหมด → แทนด้วย 0
-for k in list(I.keys()):
-    if isinstance(I[k], float) and (np.isnan(I[k]) or np.isinf(I[k])):
-        I[k] = 0.0
-
+for k2 in list(I.keys()):
+    if isinstance(I[k2], float) and (np.isnan(I[k2]) or np.isinf(I[k2])):
+        I[k2] = 0.0
 return I
 ```
 
-def score_and_signal(I, p):
-ob,os_=p[“rsi_ob”],p[“rsi_os”]
-bs,ss,ns=[],[],[]; sc=50
+def score_stock(I, p):
+ob = p[“rsi_ob”]; os = p[“rsi_os”]
+bs=[]; ss=[]; ns=[]; sc=50
+r = I[“rsi”]
+if r < os:    sc+=8; bs.append(“RSI “ + str(round(r,1)) + “ < “ + str(os) + “ Oversold”)
+elif r > ob:  sc-=8; ss.append(“RSI “ + str(round(r,1)) + “ > “ + str(ob) + “ Overbought”)
+else:         ns.append(“RSI “ + str(round(r,1)) + “ ปกติ”)
+if I[“macd”] > I[“macd_sig”] and I[“macd_h”] > 0:
+sc+=7; bs.append(“MACD ตัดขึ้น Signal”)
+elif I[“macd”] < I[“macd_sig”] and I[“macd_h”] < 0:
+sc-=7; ss.append(“MACD ตัดลง Signal”)
+pr = I[“price”]
+if pr > I[“sma_s”] > I[“sma_m”]: sc+=6; bs.append(“ราคา > SMA” + str(p[“sma_s”]) + “ > SMA” + str(p[“sma_m”]) + “ uptrend”)
+elif pr < I[“sma_s”] < I[“sma_m”]: sc-=6; ss.append(“ราคา < SMA” + str(p[“sma_s”]) + “ < SMA” + str(p[“sma_m”]) + “ downtrend”)
+if pr > I[“sma_l”]: sc+=4; bs.append(“ราคา > SMA” + str(p[“sma_l”]) + “ เหนือค่าเฉลี่ยระยะยาว”)
+else: sc-=4; ss.append(“ราคา < SMA” + str(p[“sma_l”]) + “ ต่ำกว่าค่าเฉลี่ยระยะยาว”)
+if I[“bbp”] < 0.15: sc+=6; bs.append(“BB% “ + str(round(I[“bbp”],2)) + “ ใกล้ Lower Band”)
+elif I[“bbp”] > 0.85: sc-=5; ss.append(“BB% “ + str(round(I[“bbp”],2)) + “ ใกล้ Upper Band”)
+sk = I[“sk”]; sd = I[“sd”]
+if sk < 20 and sk > sd: sc+=5; bs.append(“Stoch %K=” + str(round(sk,1)) + “ ตัดขึ้นใน oversold”)
+elif sk > 80 and sk < sd: sc-=5; ss.append(“Stoch %K=” + str(round(sk,1)) + “ ตัดลงใน overbought”)
+if I[“cci”] < -100: sc+=4; bs.append(“CCI “ + str(round(I[“cci”],1)) + “ < -100 oversold”)
+elif I[“cci”] > 100: sc-=4; ss.append(“CCI “ + str(round(I[“cci”],1)) + “ > 100 overbought”)
+if I[“wr”] < -80: sc+=4; bs.append(“Williams %R “ + str(round(I[“wr”],1)) + “ oversold”)
+elif I[“wr”] > -20: sc-=4; ss.append(“Williams %R “ + str(round(I[“wr”],1)) + “ overbought”)
+if I[“adx”] > 25:
+if I[“dip”] > I[“dim”]: sc+=5; bs.append(“ADX “ + str(round(I[“adx”],1)) + “ + DI+ > DI- uptrend”)
+else: sc-=5; ss.append(“ADX “ + str(round(I[“adx”],1)) + “ + DI- > DI+ downtrend”)
+else: ns.append(“ADX “ + str(round(I[“adx”],1)) + “ < 25 sideways”)
+if I[“mfi”] < 20: sc+=4; bs.append(“MFI “ + str(round(I[“mfi”],1)) + “ เงินไหลออกมาก”)
+elif I[“mfi”] > 80: sc-=4; ss.append(“MFI “ + str(round(I[“mfi”],1)) + “ เงินไหลเข้าเกิน”)
+if I[“obv_up”]: sc+=3; bs.append(“OBV ขาขึ้น”)
+else: sc-=2; ss.append(“OBV ขาลง”)
+if pr > I[“vwap”]: sc+=3; bs.append(“ราคา > VWAP”)
+else: sc-=3; ss.append(“ราคา < VWAP”)
+if I[“vol_r”] > 1.5: sc+=3; bs.append(“Volume “ + str(round(I[“vol_r”],1)) + “x”)
+elif I[“vol_r”] < 0.5: ns.append(“Volume ต่ำ “ + str(round(I[“vol_r”],1)) + “x”)
+if pr > I[“ichi_sa”] and pr > I[“ichi_sb”]: sc+=4; bs.append(“เหนือ Ichimoku Cloud”)
+elif pr < I[“ichi_sa”] and pr < I[“ichi_sb”]: sc-=4; ss.append(“ใต้ Ichimoku Cloud”)
+sc = max(0, min(100, sc))
+if sc >= 65:   rec=“🟢 ซื้อ”; cls=“buy”
+elif sc <= 35: rec=“🔴 ขาย”; cls=“sell”
+elif sc >= 55: rec=“🟡 เฝ้าระวัง”; cls=“watch”
+else:          rec=“⚪ ถือ”; cls=“neutral”
+at = I[“atr”]
+entry = round(pr*0.985, 2); t1 = round(pr+at*2, 2); t2 = round(pr+at*3.5, 2); sl = round(pr-at*1.5, 2)
+up = round((t1/pr-1)*100, 1) if pr > 0 else 0
+dn = round((pr/sl-1)*100, 1) if sl > 0 else 1
+rr = round(up/dn, 2) if dn > 0 else 0
+return dict(sc=sc, rec=rec, cls=cls, bs=bs, ss=ss, ns=ns,
+entry=entry, t1=t1, t2=t2, sl=sl, up=up, dn=dn, rr=rr)
 
-```
-r=I["rsi"]
-if r<os_:   sc+=8;  bs.append(f"RSI {r:.1f} < {os_} → Oversold โซนซื้อ")
-elif r>ob:  sc-=8;  ss.append(f"RSI {r:.1f} > {ob} → Overbought โซนขาย")
-else:               ns.append(f"RSI {r:.1f} อยู่ในโซนปกติ")
+# —————————————————————
 
-if I["macd"]>I["macd_sig"] and I["macd_h"]>0:  sc+=7;bs.append("MACD ตัดขึ้น Signal → โมเมนตัมขาขึ้น")
-elif I["macd"]<I["macd_sig"] and I["macd_h"]<0: sc-=7;ss.append("MACD ตัดลง Signal → โมเมนตัมขาลง")
+# DATA FETCH
 
-pr=I["price"]
-sma_s_v=I[f"sma{p['sma_s']}"]; sma_m_v=I[f"sma{p['sma_m']}"]; sma_l_v=I[f"sma{p['sma_l']}"]
-if pr>sma_s_v>sma_m_v:  sc+=6;bs.append(f"ราคา > SMA{p['sma_s']} > SMA{p['sma_m']} → uptrend")
-elif pr<sma_s_v<sma_m_v:sc-=6;ss.append(f"ราคา < SMA{p['sma_s']} < SMA{p['sma_m']} → downtrend")
-if pr>sma_l_v: sc+=4;bs.append(f"ราคา > SMA{p['sma_l']} → เหนือค่าเฉลี่ยระยะยาว")
-else:          sc-=4;ss.append(f"ราคา < SMA{p['sma_l']} → ต่ำกว่าค่าเฉลี่ยระยะยาว")
+# —————————————————————
 
-if I["bbp"]<0.15:  sc+=6;bs.append(f"BB% {I['bbp']:.2f} ใกล้ Lower → oversold")
-elif I["bbp"]>0.85:sc-=5;ss.append(f"BB% {I['bbp']:.2f} ใกล้ Upper → overbought")
-if pr>I["bbu"]: sc+=3;bs.append("Breakout เหนือ BB Upper → momentum")
-
-sk,sd=I["sk"],I["sd"]
-if sk<20 and sk>sd: sc+=5;bs.append(f"Stoch %K {sk:.1f} ตัดขึ้น %D ในโซน oversold")
-elif sk>80 and sk<sd:sc-=5;ss.append(f"Stoch %K {sk:.1f} ตัดลง %D ในโซน overbought")
-
-cci_v=I["cci"]
-if cci_v<-100: sc+=4;bs.append(f"CCI {cci_v:.1f} < -100 → oversold")
-elif cci_v>100:sc-=4;ss.append(f"CCI {cci_v:.1f} > 100 → overbought")
-
-wr_v=I["wr"]
-if wr_v<-80:  sc+=4;bs.append(f"Williams %R {wr_v:.1f} < -80 → oversold")
-elif wr_v>-20:sc-=4;ss.append(f"Williams %R {wr_v:.1f} > -20 → overbought")
-
-adx_v=I["adx"]
-if adx_v>25:
-    if I["dip"]>I["dim"]: sc+=5;bs.append(f"ADX {adx_v:.1f} + DI+>DI- → uptrend แข็งแกร่ง")
-    else:                  sc-=5;ss.append(f"ADX {adx_v:.1f} + DI->DI+ → downtrend แข็งแกร่ง")
-else: ns.append(f"ADX {adx_v:.1f} < 25 → sideways ไม่มีแนวโน้มชัด")
-
-mfi_v=I["mfi"]
-if mfi_v<20:  sc+=4;bs.append(f"MFI {mfi_v:.1f} < 20 → เงินไหลออกมาก (โอกาสดีดกลับ)")
-elif mfi_v>80:sc-=4;ss.append(f"MFI {mfi_v:.1f} > 80 → เงินไหลเข้าเกิน (ระวังแรงขาย)")
-
-if I["obv_trend"]=="up":  sc+=3;bs.append("OBV เป็นขาขึ้น → แรงซื้อสะสม")
-else:                      sc-=2;ss.append("OBV เป็นขาลง → แรงขายสะสม")
-
-if pr>I["vwap"]: sc+=3;bs.append("ราคา > VWAP → แรงซื้อจากสถาบัน")
-else:             sc-=3;ss.append("ราคา < VWAP → แรงขายจากสถาบัน")
-
-if I["vol_r"]>1.5: sc+=3;bs.append(f"Volume {I['vol_r']:.1f}x ค่าเฉลี่ย → มีนัยสำคัญ")
-elif I["vol_r"]<0.5:ns.append(f"Volume {I['vol_r']:.1f}x → ต่ำ ระวังสัญญาณหลอก")
-
-# Ichimoku
-if pr>I["ichi_sa"] and pr>I["ichi_sb"]:
-    sc+=4;bs.append("ราคาอยู่เหนือ Ichimoku Cloud → bullish")
-elif pr<I["ichi_sa"] and pr<I["ichi_sb"]:
-    sc-=4;ss.append("ราคาอยู่ใต้ Ichimoku Cloud → bearish")
-
-sc=max(0,min(100,sc))
-if sc>=65:   rec,cls="🟢 ซื้อ","buy"
-elif sc<=35: rec,cls="🔴 ขาย","sell"
-elif sc>=55: rec,cls="🟡 เฝ้าระวัง","watch"
-else:        rec,cls="⚪ ถือ","neutral"
-
-at=I["atr"]
-entry=round(pr*0.985,2); t1=round(pr+at*2,2); t2=round(pr+at*3.5,2); sl=round(pr-at*1.5,2)
-up=round((t1/pr-1)*100,1) if pr>0 else 0
-dn=round((pr/sl-1)*100,1) if sl>0 else 1
-rr=round(up/dn,2) if dn>0 else 0
-
-return dict(sc=sc,rec=rec,cls=cls,bs=bs,ss=ss,ns=ns,entry=entry,t1=t1,t2=t2,sl=sl,up=up,dn=dn,rr=rr)
-```
-
-# –––––––––––––––––––––––––––––––
-
-# DATA FETCHING  (Settrade API / yfinance fallback)
-
-# –––––––––––––––––––––––––––––––
-
-def fetch_candles_settrade(symbol, market_api, limit=200):
-“””
-ดึงข้อมูลราคาย้อนหลังจาก Settrade API
-เหมือน my_bot.py - Settrade คืนคอลัมน์ ‘last’ เป็นราคาปิด
-“””
-raw = market_api.get_candlestick(symbol, interval=“1d”, limit=limit)
-df  = pd.DataFrame(raw)
-
-```
-# Settrade API คืนคอลัมน์: last, open, high, low, volume (เหมือน my_bot.py)
-# normalize ชื่อคอลัมน์ให้ตรงกัน
-rename_map = {
-    "last":   "close",   # เหมือน my_bot.py df['last']
-    "c":      "close",
-    "o":      "open",
-    "h":      "high",
-    "l":      "low",
-    "v":      "volume",
-    "vol":    "volume",
-    "turnover": "volume",
-}
-df.rename(columns={col: rename_map.get(col, col) for col in df.columns}, inplace=True)
-
-# ถ้ายังไม่มีบางคอลัมน์ ให้ fallback
-if "close" not in df.columns:
-    # ลองหาคอลัมน์ราคาปิดชื่ออื่น
-    for alt in ["Close","CLOSE","price","Price"]:
-        if alt in df.columns:
-            df["close"] = df[alt]; break
-    else:
-        raise ValueError(f"ไม่พบคอลัมน์ราคาปิดใน Settrade response: {df.columns.tolist()}")
-
-for col, alt in [("open","close"),("high","close"),("low","close"),("volume",None)]:
-    if col not in df.columns:
-        df[col] = df[alt] if alt else 1_000_000
-
-df = df[["open","high","low","close","volume"]].apply(pd.to_numeric, errors="coerce").dropna()
+def fetch_settrade(symbol, limit=200):
+raw = st.session_state.market_api.get_candlestick(symbol, interval=“1d”, limit=limit)
+df = pd.DataFrame(raw)
+rename = {“last”:“close”,“c”:“close”,“o”:“open”,“h”:“high”,“l”:“low”,“v”:“volume”,“vol”:“volume”}
+df.rename(columns={col: rename.get(col, col) for col in df.columns}, inplace=True)
+if “close” not in df.columns:
+for alt in [“Close”,“CLOSE”,“price”,“Price”]:
+if alt in df.columns:
+df[“close”] = df[alt]; break
+for col, alt in [(“open”,“close”),(“high”,“close”),(“low”,“close”),(“volume”,None)]:
+if col not in df.columns:
+df[col] = df[alt] if alt else 1000000
+df = df[[“open”,“high”,“low”,“close”,“volume”]].apply(pd.to_numeric, errors=“coerce”).dropna()
 if len(df) < 30:
-    raise ValueError(f"ข้อมูลน้อยเกินไป ({len(df)} แท่ง)")
+raise ValueError(“ข้อมูลน้อยเกินไป”)
 return df
-```
 
-def fetch_quote_settrade(symbol, realtime_api):
-“”“ดึง real-time quote จาก Settrade”””
-q = realtime_api.get_quote_symbol(symbol)
-return q
-
-def fetch_candles_yfinance(symbol, period=“1y”):
-“”“ดึงข้อมูลจาก yfinance (สำหรับหุ้นต่างประเทศ หรือ fallback)”””
-if not YFINANCE_AVAILABLE:
-raise RuntimeError(“yfinance ไม่ได้ติดตั้ง: pip install yfinance”)
+def fetch_yfinance(symbol, period=“1y”):
+if not YF_OK:
+raise RuntimeError(“yfinance ไม่ได้ติดตั้ง”)
 ticker = yf.Ticker(symbol)
-df = ticker.history(period=period)
-df = df[[“Open”,“High”,“Low”,“Close”,“Volume”]].copy()
+df = ticker.history(period=period)[[“Open”,“High”,“Low”,“Close”,“Volume”]].copy()
 df.columns = [“open”,“high”,“low”,“close”,“volume”]
-df = df.dropna()
-return df, ticker.info
+return df.dropna(), ticker.info
 
-def fetch_candles_mock(symbol, n=200):
-“”“Mock data - ใช้เมื่อ API ยังไม่พร้อม”””
-np.random.seed(abs(hash(symbol))%99999)
-base=np.random.uniform(8,600)
-c=[base]
-for _ in range(n-1): c.append(max(c[-1]*(1+np.random.normal(0,.014)),.5))
-c=np.array(c)
-h=c*np.random.uniform(1.001,1.025,n); l=c*np.random.uniform(.975,.999,n)
-v=np.random.uniform(3e5,8e6,n).astype(int)
-return pd.DataFrame({“open”:c,“high”:h,“low”:l,“close”:c,“volume”:v})
+def fetch_mock(symbol, n=200):
+np.random.seed(abs(hash(symbol)) % 99999)
+base = np.random.uniform(8, 600)
+c = [base]
+for _ in range(n-1):
+c.append(max(c[-1]*(1+np.random.normal(0,.014)), 0.5))
+c = np.array(c)
+h = c*np.random.uniform(1.001,1.025,n); lo = c*np.random.uniform(.975,.999,n)
+v = np.random.uniform(3e5,8e6,n).astype(int)
+return pd.DataFrame({“open”:c,“high”:h,“low”:lo,“close”:c,“volume”:v})
 
-def get_data(symbol, mkt_key, use_settrade=True, p=None):
-“”“หา data อัตโนมัติ - ลอง Settrade ก่อน แล้ว fallback yfinance → mock”””
+def get_data(symbol, mkt_key):
 info = {}
-mkt_api = st.session_state.market_api
-rt_api  = st.session_state.realtime_api
-
-```
-if use_settrade and mkt_key=="SET" and mkt_api and rt_api:
-    try:
-        df    = fetch_candles_settrade(symbol, mkt_api)
-        quote = fetch_quote_settrade(symbol, rt_api)
-        # อัปเดตราคาล่าสุดจาก real-time quote
-        if quote and "last" in quote:
-            df.iloc[-1, df.columns.get_loc("close")] = float(quote["last"])
-        info["source"] = "settrade_live"
-        return df, info
-    except Exception as e:
-        info["settrade_err"] = str(e)
-
-# yfinance fallback (ใช้ได้กับ US/CN และ .BK สำหรับไทย)
-yf_sym = symbol+".BK" if mkt_key=="SET" else symbol
-if YFINANCE_AVAILABLE:
-    try:
-        df, yf_info = fetch_candles_yfinance(yf_sym)
-        info["source"] = "yfinance"
-        info["yf"] = yf_info
-        return df, info
-    except Exception as e:
-        info["yf_err"] = str(e)
-
-# Mock fallback
-df = fetch_candles_mock(symbol)
-info["source"] = "mock"
+use_live = st.session_state.logged_in and mkt_key == “SET”
+if use_live:
+try:
+df = fetch_settrade(symbol)
+q = st.session_state.realtime_api.get_quote_symbol(symbol)
+if q and “last” in q:
+df.iloc[-1, df.columns.get_loc(“close”)] = float(q[“last”])
+info[“source”] = “settrade”
 return df, info
-```
+except Exception as e:
+info[“err”] = str(e)
+yf_sym = symbol + “.BK” if mkt_key == “SET” else symbol
+if YF_OK:
+try:
+df, yf_info = fetch_yfinance(yf_sym)
+info[“source”] = “yfinance”; info[“yf”] = yf_info
+return df, info
+except Exception:
+pass
+df = fetch_mock(symbol)
+info[“source”] = “mock”
+return df, info
 
-# –––––––––––––––––––––––––––––––
+# —————————————————————
 
 # DEFAULT PARAMS
 
-# –––––––––––––––––––––––––––––––
+# —————————————————————
 
-DEFAULT_PARAMS = dict(
-sma_s=20,sma_m=50,sma_l=200,ema_f=12,ema_s=26,
-rsi_p=14,rsi_ob=70,rsi_os=30,
-macd_f=12,macd_s=26,macd_sg=9,
-bb_p=20,bb_k=2,stoch_k=14,stoch_d=3,
-atr_p=14,cci_p=20,wr_p=14,mfi_p=14,adx_p=14,
-min_score=60,min_rr=1.5,min_adx=18,
+DEF = dict(
+sma_s=20, sma_m=50, sma_l=200, ema_f=12, ema_s=26,
+rsi_p=14, rsi_ob=70, rsi_os=30,
+macd_f=12, macd_s=26, macd_sg=9,
+bb_p=20, bb_k=2, stoch_k=14, stoch_d=3,
+atr_p=14, cci_p=20, wr_p=14, mfi_p=14, adx_p=14,
+min_score=60, min_rr=1.5, min_adx=18,
 )
 
 def get_params():
-return {k: st.session_state.get(f”p_{k}”, v) for k,v in DEFAULT_PARAMS.items()}
+return {k: st.session_state.get(“p_”+k, v) for k, v in DEF.items()}
 
-# –––––––––––––––––––––––––––––––
+# —————————————————————
 
-# SHARED UI COMPONENTS
+# SHARED UI
 
-# –––––––––––––––––––––––––––––––
+# —————————————————————
 
 def render_header():
-src_badge = “”
 if st.session_state.logged_in:
-src_badge = ‘<span style="background:rgba(0,184,148,.15);border:1px solid #00b89450;color:#00b894;font-size:.65rem;font-weight:700;padding:3px 8px;border-radius:8px;">⚡ Settrade Connected</span>’
+badge = ‘<span style="background:rgba(0,184,148,.15);border:1px solid rgba(0,184,148,.4);color:#00b894;font-size:.65rem;font-weight:700;padding:3px 8px;border-radius:8px;">Settrade Live</span>’
 else:
-src_badge = ‘<span style="background:rgba(253,203,110,.1);border:1px solid #fdcb6e40;color:#fdcb6e;font-size:.65rem;font-weight:700;padding:3px 8px;border-radius:8px;">🔶 ยังไม่ได้ Login</span>’
-st.markdown(f”””
-<div class="app-header">
-<h1>📈 Stock Scanner Pro</h1>
-<div class="sub">
-<span class="live-dot"></span>Real-time · 15+ Indicators · 3 ตลาด  {src_badge}
-</div>
-</div>
-“””, unsafe_allow_html=True)
+badge = ‘<span style="background:rgba(253,203,110,.1);border:1px solid rgba(253,203,110,.4);color:#fdcb6e;font-size:.65rem;font-weight:700;padding:3px 8px;border-radius:8px;">ยังไม่ได้ Login</span>’
+st.markdown(
+‘<div class="app-hdr"><h1>Stock Scanner Pro</h1>’
+‘<div class="sub"><span class="ldot"></span>Real-time · 15+ Indicators · 3 ตลาด  ’ + badge + ‘</div></div>’,
+unsafe_allow_html=True
+)
 
-def render_param_expander():
-with st.expander(“⚙️ ตั้งค่า Parameters”, expanded=False):
-c1,c2=st.columns(2)
+def render_params():
+with st.expander(“ตั้งค่า Parameters”, expanded=False):
+c1, c2 = st.columns(2)
 with c1:
-st.slider(“SMA สั้น”,5,50,DEFAULT_PARAMS[“sma_s”],key=“p_sma_s”)
-st.slider(“SMA กลาง”,20,100,DEFAULT_PARAMS[“sma_m”],key=“p_sma_m”)
-st.slider(“SMA ยาว”,100,300,DEFAULT_PARAMS[“sma_l”],key=“p_sma_l”)
-st.slider(“EMA Fast”,5,20,DEFAULT_PARAMS[“ema_f”],key=“p_ema_f”)
-st.slider(“EMA Slow”,15,50,DEFAULT_PARAMS[“ema_s”],key=“p_ema_s”)
-st.slider(“RSI Period”,7,21,DEFAULT_PARAMS[“rsi_p”],key=“p_rsi_p”)
-st.slider(“RSI Overbought”,60,85,DEFAULT_PARAMS[“rsi_ob”],key=“p_rsi_ob”)
-st.slider(“RSI Oversold”,15,40,DEFAULT_PARAMS[“rsi_os”],key=“p_rsi_os”)
+st.slider(“SMA สั้น”, 5, 50, DEF[“sma_s”], key=“p_sma_s”)
+st.slider(“SMA กลาง”, 20, 100, DEF[“sma_m”], key=“p_sma_m”)
+st.slider(“SMA ยาว”, 100, 300, DEF[“sma_l”], key=“p_sma_l”)
+st.slider(“RSI Period”, 7, 21, DEF[“rsi_p”], key=“p_rsi_p”)
+st.slider(“RSI Overbought”, 60, 85, DEF[“rsi_ob”], key=“p_rsi_ob”)
+st.slider(“RSI Oversold”, 15, 40, DEF[“rsi_os”], key=“p_rsi_os”)
+st.slider(“MACD Fast”, 8, 20, DEF[“macd_f”], key=“p_macd_f”)
+st.slider(“MACD Slow”, 20, 40, DEF[“macd_s”], key=“p_macd_s”)
+st.slider(“MACD Signal”, 5, 15, DEF[“macd_sg”], key=“p_macd_sg”)
 with c2:
-st.slider(“MACD Fast”,8,20,DEFAULT_PARAMS[“macd_f”],key=“p_macd_f”)
-st.slider(“MACD Slow”,20,40,DEFAULT_PARAMS[“macd_s”],key=“p_macd_s”)
-st.slider(“MACD Signal”,5,15,DEFAULT_PARAMS[“macd_sg”],key=“p_macd_sg”)
-st.slider(“BB Period”,10,30,DEFAULT_PARAMS[“bb_p”],key=“p_bb_p”)
-st.slider(“BB Std Dev”,1,3,DEFAULT_PARAMS[“bb_k”],key=“p_bb_k”)
-st.slider(“Stoch %K”,5,21,DEFAULT_PARAMS[“stoch_k”],key=“p_stoch_k”)
-st.slider(“Stoch %D”,2,7,DEFAULT_PARAMS[“stoch_d”],key=“p_stoch_d”)
-st.slider(“ADX Period”,7,21,DEFAULT_PARAMS[“adx_p”],key=“p_adx_p”)
-c3,c4=st.columns(2)
+st.slider(“BB Period”, 10, 30, DEF[“bb_p”], key=“p_bb_p”)
+st.slider(“BB Std Dev”, 1, 3, DEF[“bb_k”], key=“p_bb_k”)
+st.slider(“Stoch %K”, 5, 21, DEF[“stoch_k”], key=“p_stoch_k”)
+st.slider(“Stoch %D”, 2, 7, DEF[“stoch_d”], key=“p_stoch_d”)
+st.slider(“ATR Period”, 7, 21, DEF[“atr_p”], key=“p_atr_p”)
+st.slider(“CCI Period”, 10, 30, DEF[“cci_p”], key=“p_cci_p”)
+st.slider(“Williams %R”, 7, 21, DEF[“wr_p”], key=“p_wr_p”)
+st.slider(“MFI Period”, 7, 21, DEF[“mfi_p”], key=“p_mfi_p”)
+st.slider(“ADX Period”, 7, 21, DEF[“adx_p”], key=“p_adx_p”)
+c3, c4 = st.columns(2)
 with c3:
-st.slider(“ATR Period”,7,21,DEFAULT_PARAMS[“atr_p”],key=“p_atr_p”)
-st.slider(“CCI Period”,10,30,DEFAULT_PARAMS[“cci_p”],key=“p_cci_p”)
-st.slider(“Williams %R”,7,21,DEFAULT_PARAMS[“wr_p”],key=“p_wr_p”)
-st.slider(“MFI Period”,7,21,DEFAULT_PARAMS[“mfi_p”],key=“p_mfi_p”)
+st.slider(“คะแนนขั้นต่ำ”, 0, 100, DEF[“min_score”], key=“p_min_score”)
 with c4:
-st.slider(“คะแนนขั้นต่ำ”,0,100,DEFAULT_PARAMS[“min_score”],key=“p_min_score”)
-st.slider(“R/R ขั้นต่ำ”,0.5,5.0,float(DEFAULT_PARAMS[“min_rr”]),step=0.5,key=“p_min_rr”)
-st.slider(“ADX ขั้นต่ำ”,0,40,DEFAULT_PARAMS[“min_adx”],key=“p_min_adx”)
+st.slider(“R/R ขั้นต่ำ”, 0.5, 5.0, float(DEF[“min_rr”]), step=0.5, key=“p_min_rr”)
 
-def render_deep_analysis(sym, mkt_key, I, S, info, yf_info=None):
-“”“แสดงผลวิเคราะห์เจาะลึก”””
+def render_deep(sym, mkt_key, I, S, info, yf_info=None):
 p = get_params()
-mkt  = MARKETS.get(mkt_key, {“flag”:“🔍”,“name”:“Custom”,“currency”:””,“tag”:“tag-manual”})
-cur  = mkt[“currency”]
-tag  = mkt.get(“tag”,“tag-manual”)
-pr   = I[“price”]
-sc   = S[“sc”]
-score_cls = “score-h” if sc>=65 else “score-m” if sc>=45 else “score-l”
-chip_cls  = f”chip-{S[‘cls’]}”
-chg_cls   = “change-up” if I[“chg”]>=0 else “change-dn”
-src_icon  = “⚡” if info.get(“source”)==“settrade_live” else “📡” if info.get(“source”)==“yfinance” else “🔶”
-src_label = {“settrade_live”:“Settrade Live”,“yfinance”:“Yahoo Finance”,“mock”:“Mock Data”}.get(info.get(“source”,“mock”),””)
+mkt = MARKETS.get(mkt_key, {“flag”:”?”,“name”:“Custom”,“currency”:””,“tag”:“tus”})
+cur = mkt[“currency”]
+tag = mkt[“tag”]
+pr  = I[“price”]
+sc  = S[“sc”]
 
 ```
-# -- Pre-compute ALL conditional values to avoid f-string nesting issues --
-name_str     = dict(mkt.get("stocks",[])).get(sym, sym)
+# pre-compute all display strings (no conditionals inside f-strings)
 price_color  = "#00b894" if I["chg"] >= 0 else "#d63031"
-pr_str       = f"{cur}{pr:,.2f}"
-chg_str      = ("+" if I["chg"] >= 0 else "") + f"{I['chg']:.2f}%"
-chg5_str     = ("+" if I["chg_5d"] >= 0 else "") + f"{I['chg_5d']:.1f}%"
-chg20_str    = ("+" if I["chg_20d"] >= 0 else "") + f"{I['chg_20d']:.1f}%"
-ts_now       = datetime.now().strftime("%H:%M:%S")
+chg_sign     = "+" if I["chg"] >= 0 else ""
+chg5_sign    = "+" if I["chg_5d"] >= 0 else ""
+chg20_sign   = "+" if I["chg_20d"] >= 0 else ""
+pr_str       = cur + "{:,.2f}".format(pr)
+chg_str      = chg_sign + "{:.2f}%".format(I["chg"])
+chg5_str     = chg5_sign + "{:.1f}%".format(I["chg_5d"])
+chg20_str    = chg20_sign + "{:.1f}%".format(I["chg_20d"])
 sc_color     = "#00b894" if sc >= 65 else "#fdcb6e" if sc >= 45 else "#d63031"
-rr_advice    = "✅ R/R ดีมาก เหมาะสมในการเข้าซื้อ" if S["rr"] >= 2 else ("⚠️ R/R พอได้ ควรรอจุดที่ดีกว่า" if S["rr"] >= 1.5 else "❌ R/R ต่ำ ความเสี่ยงสูงกว่าผลตอบแทน")
-lib_warn_html = ('<div style="margin-top:8px;padding:8px;background:rgba(214,48,49,.08);border-radius:8px;font-size:.75rem;color:#ff7675;">❌ ติดตั้ง library ที่ขาดด้วย: <code>pip install pandas_ta settrade-v2 yfinance</code><br>แล้วรัน streamlit ใหม่ในโฟลเดอร์เดียวกับ my_bot.py</div>'
-                if not SETTRADE_AVAILABLE or not PANDAS_TA_AVAILABLE else "")
-st.markdown(f"""
-<div class="da-header">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
-    <div>
-      <span class="da-symbol">{sym}</span>
-      <span class="da-market-tag {tag}">{mkt['flag']} {mkt_key}</span>
-      <div style="font-size:.72rem;color:#8892b0;margin-top:4px;">{name_str}</div>
-    </div>
-    <div class="score-ring {score_cls}" style="width:54px;height:54px;font-size:1.05rem;">{sc}</div>
-  </div>
-  <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:8px;">
-    <div>
-      <div class="da-price" style="color:{price_color}">{pr_str}</div>
-      <span class="sc-change {chg_cls}">{chg_str} วันนี้</span>
-      &nbsp;<span style="color:#8892b0;font-size:.7rem;">{chg5_str} 5วัน &nbsp; {chg20_str} 20วัน</span>
-    </div>
-    <div style="text-align:right;">
-      <div><span class="signal-chip {chip_cls}">{S['rec']}</span></div>
-      <div style="font-size:.7rem;color:#8892b0;margin-top:5px;">R/R <span style="color:#6c63ff;font-weight:700;">1:{S['rr']:.2f}</span> &nbsp;↑{S['up']}% / ↓{S['dn']}%</div>
-    </div>
-  </div>
-  <div style="margin-top:10px;font-size:.68rem;color:#636e72;">{src_icon} {src_label} · {ts_now}</div>
-</div>
-""", unsafe_allow_html=True)
+score_cls    = "sh" if sc >= 65 else "sm" if sc >= 45 else "sl"
+chip_cls     = "chip-" + S["cls"]
+chg_cls      = "cup" if I["chg"] >= 0 else "cdn"
+src_lbl      = {"settrade":"Settrade Live","yfinance":"Yahoo Finance","mock":"Mock Data"}.get(info.get("source","mock"),"")
+name_str     = dict(mkt.get("stocks",[])).get(sym, sym)
+rr_str       = "1:" + "{:.2f}".format(S["rr"])
+entry_str    = cur + "{:,.2f}".format(S["entry"])
+sl_str       = cur + "{:,.2f}".format(S["sl"])
+t1_str       = cur + "{:,.2f}".format(S["t1"])
+t2_str       = cur + "{:,.2f}".format(S["t2"])
+t2_pct       = round((S["t2"]/pr-1)*100, 1) if pr > 0 else 0
+open_str     = cur + "{:,.2f}".format(I["open"])
+high_str     = cur + "{:,.2f}".format(I["high_d"])
+low_str      = cur + "{:,.2f}".format(I["low_d"])
+volr_str     = "{:.1f}x".format(I["vol_r"])
+volr_cls     = "t1" if I["vol_r"] > 1.5 else ""
+r2_str       = cur + "{:,.2f}".format(I["r2"])
+r1_str       = cur + "{:,.2f}".format(I["r1"])
+pv_str       = cur + "{:,.2f}".format(I["pivot"])
+s1_str       = cur + "{:,.2f}".format(I["s1"])
+s2_str       = cur + "{:,.2f}".format(I["s2"])
+ic_conv_str  = cur + "{:,.2f}".format(I["ichi_conv"])
+ic_base_str  = cur + "{:,.2f}".format(I["ichi_base"])
+ic_sa_str    = cur + "{:,.2f}".format(I["ichi_sa"])
+ic_sb_str    = cur + "{:,.2f}".format(I["ichi_sb"])
+wl_str       = cur + "{:,.2f}".format(I["52wl"])
+wh_str       = cur + "{:,.2f}".format(I["52wh"])
+sma_s_str    = cur + "{:,.1f}".format(I["sma_s"])
+sma_m_str    = cur + "{:,.1f}".format(I["sma_m"])
+sma_l_str    = cur + "{:,.1f}".format(I["sma_l"])
+vwap_str     = cur + "{:,.2f}".format(I["vwap"])
+atr_str      = cur + "{:,.2f}".format(I["atr"])
+ts_now       = datetime.now().strftime("%H:%M:%S")
+rr_advice    = ("R/R ดีมาก" if S["rr"] >= 2 else "R/R พอได้" if S["rr"] >= 1.5 else "R/R ต่ำ ระวัง")
+rr_color     = "#00b894" if S["rr"] >= 2 else "#fdcb6e" if S["rr"] >= 1.5 else "#d63031"
+ichi_b       = pr > I["ichi_sa"] and pr > I["ichi_sb"]
+ichi_s       = pr < I["ichi_sa"] and pr < I["ichi_sb"]
+ichi_txt     = "เหนือ Cloud Bullish" if ichi_b else ("ใต้ Cloud Bearish" if ichi_s else "ใน Cloud Neutral")
+ichi_color   = "#00b894" if ichi_b else "#d63031" if ichi_s else "#fdcb6e"
+pct_52       = min(100, max(0, (pr-I["52wl"])/(I["52wh"]-I["52wl"]+1e-9)*100))
+pct_52_str   = "{:.0f}%".format(pct_52)
+pct_52_w     = "{:.1f}%".format(pct_52)
 
-# OHLCV row - pre-compute conditionals
-volr_cls = "tgt-t1" if I["vol_r"] > 1.5 else ""
-volr_str = f"{I['vol_r']:.1f}x"
-open_str  = f"{open_str}"
-high_str  = f"{high_str}"
-low_str   = f"{low_str}"
-st.markdown(f"""
-<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px;">
-  <div class="tgt"><div class="tgt-label">เปิด</div><div class="tgt-val" style="color:#e2e8f0;">{open_str}</div></div>
-  <div class="tgt"><div class="tgt-label">สูงสุด</div><div class="tgt-val tgt-t1">{high_str}</div></div>
-  <div class="tgt"><div class="tgt-label">ต่ำสุด</div><div class="tgt-val tgt-sl">{low_str}</div></div>
-  <div class="tgt"><div class="tgt-label">Vol Ratio</div><div class="tgt-val {volr_cls}">{volr_str}</div></div>
-</div>
-""", unsafe_allow_html=True)
+# Header
+st.markdown(
+    '<div class="da-hdr">'
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">'
+    '<div><span class="da-sym">' + sym + '</span>'
+    '<span class="da-tag ' + tag + '">' + mkt["flag"] + ' ' + mkt_key + '</span>'
+    '<div style="font-size:.72rem;color:#8892b0;margin-top:4px;">' + name_str + '</div></div>'
+    '<div class="sring ' + score_cls + '" style="width:54px;height:54px;font-size:1.05rem;">' + str(sc) + '</div>'
+    '</div>'
+    '<div style="margin-top:14px;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:8px;">'
+    '<div><div class="da-price" style="color:' + price_color + '">' + pr_str + '</div>'
+    '<span class="sc-chg ' + chg_cls + '">' + chg_str + ' วันนี้</span>'
+    ' <span style="color:#8892b0;font-size:.7rem;">' + chg5_str + ' 5วัน ' + chg20_str + ' 20วัน</span></div>'
+    '<div style="text-align:right;">'
+    '<span class="chip ' + chip_cls + '">' + S["rec"] + '</span>'
+    '<div style="font-size:.7rem;color:#8892b0;margin-top:5px;">R/R <span style="color:#6c63ff;font-weight:700;">' + rr_str + '</span></div>'
+    '</div></div>'
+    '<div style="margin-top:10px;font-size:.68rem;color:#636e72;">' + src_lbl + ' · ' + ts_now + '</div>'
+    '</div>',
+    unsafe_allow_html=True
+)
 
-# Tab: เทคนิค / พื้นฐาน / เป้าหมาย / สัญญาณ
-tab_tech, tab_target, tab_sig, tab_fund = st.tabs(["📊 Technical","🎯 เป้าหมาย","🧠 สัญญาณ","📋 พื้นฐาน"])
+# OHLCV
+st.markdown(
+    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px;">'
+    '<div class="tgt"><div class="tl">เปิด</div><div class="tv" style="color:#e2e8f0;">' + open_str + '</div></div>'
+    '<div class="tgt"><div class="tl">สูงสุด</div><div class="tv t1">' + high_str + '</div></div>'
+    '<div class="tgt"><div class="tl">ต่ำสุด</div><div class="tv ts">' + low_str + '</div></div>'
+    '<div class="tgt"><div class="tl">Volume</div><div class="tv ' + volr_cls + '">' + volr_str + '</div></div>'
+    '</div>',
+    unsafe_allow_html=True
+)
 
-# -- TAB: TECHNICAL --------------------------------------
+tab_tech, tab_target, tab_sig, tab_fund = st.tabs(["Technical","เป้าหมาย","สัญญาณ","พื้นฐาน"])
+
 with tab_tech:
-    # Indicator grid
-    def ib(lbl, val, is_b, is_s, sfx=""):
-        cls_ = "bull" if is_b else "bear" if is_s else "neut"
-        arrow = "▲ Bullish" if is_b else "▼ Bearish" if is_s else "→ Neutral"
-        return f'<div class="ind-box"><div class="ind-label">{lbl}</div><div class="ind-val {cls_}">{val}{sfx}</div><div class="ind-status {cls_}">{arrow}</div></div>'
+    def ib(lbl, val, is_b, is_s):
+        cls2 = "bull" if is_b else "bear" if is_s else "neut"
+        arrow = "Bullish" if is_b else "Bearish" if is_s else "Neutral"
+        return ('<div class="ibox"><div class="ilabel">' + lbl + '</div>'
+                '<div class="ival ' + cls2 + '">' + str(val) + '</div>'
+                '<div class="ist ' + cls2 + '">' + arrow + '</div></div>')
 
-    sma_s_v=I[f"sma{p['sma_s']}"]; sma_m_v=I[f"sma{p['sma_m']}"]; sma_l_v=I[f"sma{p['sma_l']}"]
-    ma_b=pr>sma_s_v>sma_m_v; ma_s=pr<sma_s_v<sma_m_v
-    ichi_b=pr>I["ichi_sa"] and pr>I["ichi_sb"]
-    ichi_s=pr<I["ichi_sa"] and pr<I["ichi_sb"]
-
-    rows_html = [
-        ib("RSI",f"{I['rsi']:.1f}",I["rsi"]<p["rsi_os"],I["rsi"]>p["rsi_ob"]),
-        ib("MACD Hist",f"{I['macd_h']:.4f}",I["macd"]>I["macd_sig"],I["macd"]<I["macd_sig"]),
-        ib(f"SMA{p['sma_s']}/{p['sma_m']}","Up" if ma_b else "Dn" if ma_s else "Flat",ma_b,ma_s),
-        ib(f"SMA{p['sma_l']}",sma_l_str,pr>sma_l_v,pr<sma_l_v),
-        ib("BB %B",f"{I['bbp']:.2f}",I["bbp"]<0.2,I["bbp"]>0.8),
-        ib("BB Width",f"{I['bb_width']:.1f}%",False,False),
-        ib("Stoch %K",f"{I['sk']:.1f}",I["sk"]<20 and I["sk"]>I["sd"],I["sk"]>80 and I["sk"]<I["sd"]),
-        ib("CCI",f"{I['cci']:.1f}",I["cci"]<-100,I["cci"]>100),
-        ib("Williams %R",f"{I['wr']:.1f}",I["wr"]<-80,I["wr"]>-20),
-        ib("MFI",f"{I['mfi']:.1f}",I["mfi"]<20,I["mfi"]>80),
-        ib("ADX",f"{I['adx']:.1f}",I["adx"]>25 and I["dip"]>I["dim"],I["adx"]>25 and I["dim"]>I["dip"]),
-        ib("OBV","Up" if I["obv_trend"]=="up" else "Down",I["obv_trend"]=="up",I["obv_trend"]=="down"),
-        ib("VWAP",vwap_str,pr>I["vwap"],pr<I["vwap"]),
-        ib("Ichimoku","Bullish" if ichi_b else "Bearish" if ichi_s else "In Cloud",ichi_b,ichi_s),
-        ib("Vol Ratio",f"{I['vol_r']:.2f}x",I["vol_r"]>1.5,I["vol_r"]<0.5),
-        ib("ATR",f"{cur}{I['atr']:.2f}",False,False),
+    ma_b = pr > I["sma_s"] > I["sma_m"]
+    ma_s = pr < I["sma_s"] < I["sma_m"]
+    rows = [
+        ib("RSI", "{:.1f}".format(I["rsi"]), I["rsi"]<p["rsi_os"], I["rsi"]>p["rsi_ob"]),
+        ib("MACD Hist", "{:.4f}".format(I["macd_h"]), I["macd"]>I["macd_sig"], I["macd"]<I["macd_sig"]),
+        ib("SMA Trend", "Up" if ma_b else "Down" if ma_s else "Flat", ma_b, ma_s),
+        ib("SMA" + str(p["sma_l"]), sma_l_str, pr > I["sma_l"], pr < I["sma_l"]),
+        ib("BB %B", "{:.2f}".format(I["bbp"]), I["bbp"]<0.2, I["bbp"]>0.8),
+        ib("BB Width", "{:.1f}%".format(I["bb_width"]), False, False),
+        ib("Stoch %K", "{:.1f}".format(I["sk"]), I["sk"]<20 and I["sk"]>I["sd"], I["sk"]>80 and I["sk"]<I["sd"]),
+        ib("CCI", "{:.1f}".format(I["cci"]), I["cci"]<-100, I["cci"]>100),
+        ib("Williams %R", "{:.1f}".format(I["wr"]), I["wr"]<-80, I["wr"]>-20),
+        ib("MFI", "{:.1f}".format(I["mfi"]), I["mfi"]<20, I["mfi"]>80),
+        ib("ADX", "{:.1f}".format(I["adx"]), I["adx"]>25 and I["dip"]>I["dim"], I["adx"]>25 and I["dim"]>I["dip"]),
+        ib("OBV", "Up" if I["obv_up"] else "Down", I["obv_up"], not I["obv_up"]),
+        ib("VWAP", vwap_str, pr > I["vwap"], pr < I["vwap"]),
+        ib("Ichimoku", ichi_txt, ichi_b, ichi_s),
+        ib("Vol Ratio", volr_str, I["vol_r"]>1.5, I["vol_r"]<0.5),
+        ib("ATR", atr_str, False, False),
     ]
-    grid_html = '<div class="ind-grid">'+"".join(rows_html)+'</div>'
-    st.markdown(grid_html, unsafe_allow_html=True)
+    st.markdown('<div class="ind-grid">' + "".join(rows) + '</div>', unsafe_allow_html=True)
 
-    # Pivot Points
-    st.markdown('<div class="section-title">📐 Pivot Points</div>', unsafe_allow_html=True)
-    st.markdown(f"""
-    <div class="pivot-row">
-      <div class="pvt-box"><div class="pvt-label">R2</div><div class="pvt-val" style="color:#ff7675;">{r2_str}</div></div>
-      <div class="pvt-box"><div class="pvt-label">R1</div><div class="pvt-val" style="color:#fab1a0;">{r1_str}</div></div>
-      <div class="pvt-box"><div class="pvt-label">PIVOT</div><div class="pvt-val" style="color:#74b9ff;">{pv_str}</div></div>
-      <div class="pvt-box"><div class="pvt-label">S1</div><div class="pvt-val" style="color:#55efc4;">{s1_str}</div></div>
-      <div class="pvt-box"><div class="pvt-label">S2</div><div class="pvt-val" style="color:#00cec9;">{s2_str}</div></div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown('<div class="sec-title">Pivot Points</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="pvt-row">'
+        '<div class="pvt"><div class="pvtl">R2</div><div class="pvtv" style="color:#ff7675;">' + r2_str + '</div></div>'
+        '<div class="pvt"><div class="pvtl">R1</div><div class="pvtv" style="color:#fab1a0;">' + r1_str + '</div></div>'
+        '<div class="pvt"><div class="pvtl">PIVOT</div><div class="pvtv" style="color:#74b9ff;">' + pv_str + '</div></div>'
+        '<div class="pvt"><div class="pvtl">S1</div><div class="pvtv" style="color:#55efc4;">' + s1_str + '</div></div>'
+        '<div class="pvt"><div class="pvtl">S2</div><div class="pvtv" style="color:#00cec9;">' + s2_str + '</div></div>'
+        '</div>',
+        unsafe_allow_html=True
+    )
 
-    # Ichimoku
-    st.markdown('<div class="section-title">☁️ Ichimoku</div>', unsafe_allow_html=True)
-    ichi_color = "#00b894" if ichi_b else "#d63031" if ichi_s else "#fdcb6e"
-    ichi_cloud_txt = ("☁️ ราคาอยู่เหนือ Cloud → Bullish" if ichi_b else
-                      "☁️ ราคาอยู่ใต้ Cloud → Bearish" if ichi_s else
-                      "☁️ ราคาอยู่ใน Cloud → Neutral")
-    # Pre-format price strings for pivot/ichi to avoid :,. in nested f-strings
-    r2_str   = f"{r2_str}"
-    r1_str   = f"{r1_str}"
-    pv_str   = f"{pv_str}"
-    s1_str   = f"{s1_str}"
-    s2_str   = f"{s2_str}"
-    ic_conv_str = f"{ic_conv_str}"
-    ic_base_str = f"{ic_base_str}"
-    ic_sa_str   = f"{ic_sa_str}"
-    ic_sb_str   = f"{ic_sb_str}"
-    wl_str   = f"{wl_str}"
-    wh_str   = f"{wh_str}"
-    sma_l_str = f"{cur}{sma_l_v:,.1f}"
-    vwap_str  = f"{cur}{I['vwap']:,.2f}"
-    atr_str   = f"{cur}{I['atr']:,.2f}"
-    st.markdown(f"""
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px;">
-      <div class="tgt"><div class="tgt-label">Tenkan (9)</div><div class="tgt-val" style="color:#74b9ff;">{ic_conv_str}</div></div>
-      <div class="tgt"><div class="tgt-label">Kijun (26)</div><div class="tgt-val" style="color:#fab1a0;">{ic_base_str}</div></div>
-      <div class="tgt"><div class="tgt-label">Span A</div><div class="tgt-val" style="color:#00b894;">{ic_sa_str}</div></div>
-      <div class="tgt"><div class="tgt-label">Span B</div><div class="tgt-val" style="color:#d63031;">{ic_sb_str}</div></div>
-    </div>
-    <div style="background:{ichi_color}18;border:1px solid {ichi_color}50;border-radius:10px;padding:10px;text-align:center;font-size:.82rem;color:{ichi_color};font-weight:700;">
-      {ichi_cloud_txt}
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown('<div class="sec-title">Ichimoku</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">'
+        '<div class="tgt"><div class="tl">Tenkan</div><div class="tv te">' + ic_conv_str + '</div></div>'
+        '<div class="tgt"><div class="tl">Kijun</div><div class="tv" style="color:#fab1a0;">' + ic_base_str + '</div></div>'
+        '<div class="tgt"><div class="tl">Span A</div><div class="tv t1">' + ic_sa_str + '</div></div>'
+        '<div class="tgt"><div class="tl">Span B</div><div class="tv ts">' + ic_sb_str + '</div></div>'
+        '</div>'
+        '<div style="background:' + ichi_color + '18;border:1px solid ' + ichi_color + '50;border-radius:10px;padding:10px;text-align:center;font-size:.82rem;color:' + ichi_color + ';font-weight:700;">'
+        + ichi_txt + '</div>',
+        unsafe_allow_html=True
+    )
 
-    # 52W Range bar
-    pct_52 = min(100, max(0, (pr-I["52wl"])/(I["52wh"]-I["52wl"]+1e-9)*100))
-    st.markdown('<div class="section-title">📅 52-Week Range</div>', unsafe_allow_html=True)
-    st.markdown(f"""
-    <div style="background:#1a1a2e;border-radius:10px;padding:12px;">
-      <div style="display:flex;justify-content:space-between;font-size:.7rem;color:#8892b0;margin-bottom:6px;">
-        <span>Low: {wl_str}</span>
-        <span style="color:#e2e8f0;font-weight:600;">{pct_52:.0f}% จากต่ำสุด</span>
-        <span>High: {wh_str}</span>
-      </div>
-      <div style="background:#2a2a4a;border-radius:4px;height:8px;position:relative;">
-        <div style="position:absolute;left:0;top:0;height:8px;width:{pct_52}%;background:linear-gradient(90deg,#6c63ff,#00b894);border-radius:4px;"></div>
-        <div style="position:absolute;top:-3px;left:{pct_52}%;transform:translateX(-50%);width:14px;height:14px;background:#fff;border-radius:50%;border:2px solid #6c63ff;"></div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown('<div class="sec-title">52-Week Range</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div style="background:#1a1a2e;border-radius:10px;padding:12px;">'
+        '<div style="display:flex;justify-content:space-between;font-size:.7rem;color:#8892b0;margin-bottom:6px;">'
+        '<span>Low: ' + wl_str + '</span>'
+        '<span style="color:#e2e8f0;font-weight:600;">' + pct_52_str + ' จากต่ำสุด</span>'
+        '<span>High: ' + wh_str + '</span></div>'
+        '<div style="background:#2a2a4a;border-radius:4px;height:8px;position:relative;">'
+        '<div style="position:absolute;left:0;top:0;height:8px;width:' + pct_52_w + ';background:linear-gradient(90deg,#6c63ff,#00b894);border-radius:4px;"></div>'
+        '</div></div>',
+        unsafe_allow_html=True
+    )
 
-# -- TAB: เป้าหมาย ---------------------------------------
-# Pre-compute target price strings
-entry_str  = f"{entry_str}"
-sl_str     = f"{sl_str}"
-t1_str     = f"{t1_str}"
-t2_str     = f"{t2_str}"
-t2_pct     = round((S['t2']/pr-1)*100,1) if pr > 0 else 0
-rr_str     = f"1 : {S['rr']:.2f}"
 with tab_target:
-    st.markdown(f"""
-    <div style="background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.25);border-radius:14px;padding:16px;margin-bottom:14px;text-align:center;">
-      <div style="font-size:.72rem;color:#8892b0;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">คะแนนรวม</div>
-      <div style="font-size:2.5rem;font-weight:700;color:{sc_color};font-family:'IBM Plex Mono',monospace;">{sc}<span style="font-size:1rem;color:#636e72;">/100</span></div>
-      <div style="margin-top:8px;"><span class="signal-chip {chip_cls}" style="font-size:.85rem;padding:6px 16px;">{S['rec']}</span></div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown('<div class="section-title">🎯 ราคาเป้าหมาย</div>', unsafe_allow_html=True)
-    st.markdown(f"""
-    <div class="target-row" style="grid-template-columns:1fr 1fr;gap:10px;">
-      <div class="tgt" style="padding:14px;">
-        <div class="tgt-label">📍 จุดซื้อที่ดี</div>
-        <div class="tgt-val tgt-entry" style="font-size:1.1rem;margin-top:6px;">{entry_str}</div>
-        <div style="font-size:.65rem;color:#8892b0;margin-top:4px;">-1.5% จากราคาปัจจุบัน</div>
-      </div>
-      <div class="tgt" style="padding:14px;">
-        <div class="tgt-label">🛑 Stop Loss</div>
-        <div class="tgt-val tgt-sl" style="font-size:1.1rem;margin-top:6px;">{sl_str}</div>
-        <div style="font-size:.65rem;color:#8892b0;margin-top:4px;">-{S['dn']:.1f}% / ATR×1.5</div>
-      </div>
-      <div class="tgt" style="padding:14px;">
-        <div class="tgt-label">🎯 เป้าหมาย 1</div>
-        <div class="tgt-val tgt-t1" style="font-size:1.1rem;margin-top:6px;">{t1_str}</div>
-        <div style="font-size:.65rem;color:#8892b0;margin-top:4px;">+{S['up']:.1f}% / ATR×2.0</div>
-      </div>
-      <div class="tgt" style="padding:14px;">
-        <div class="tgt-label">🚀 เป้าหมาย 2</div>
-        <div class="tgt-val tgt-t2" style="font-size:1.1rem;margin-top:6px;">{t2_str}</div>
-        <div style="font-size:.65rem;color:#8892b0;margin-top:4px;">+{t2_pct:.1f}% / ATR×3.5</div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    rr_color="#00b894" if S["rr"]>=2 else "#fdcb6e" if S["rr"]>=1.5 else "#d63031"
-    rr_color_bg = "rgba(0,184,148,.08)" if S["rr"]>=2 else ("rgba(253,203,110,.08)" if S["rr"]>=1.5 else "rgba(214,48,49,.08)")
-    rr_color_bd = "#00b89440" if S["rr"]>=2 else ("#fdcb6e40" if S["rr"]>=1.5 else "#d6303140")
-    st.markdown(f"""
-    <div style="background:{rr_color_bg};border:1px solid {rr_color_bd};border-radius:12px;padding:14px;margin-top:12px;text-align:center;">
-      <div style="font-size:.72rem;color:#8892b0;text-transform:uppercase;letter-spacing:1px;">Risk / Reward Ratio</div>
-      <div style="font-size:2rem;font-weight:700;color:{rr_color};font-family:'IBM Plex Mono',monospace;margin:6px 0;">1 : {S['rr']:.2f}</div>
-      <div style="font-size:.78rem;color:#8892b0;">
-        Upside <span style="color:#00b894;font-weight:700;">+{S['up']:.1f}%</span> &nbsp;vs&nbsp;
-        Downside <span style="color:#d63031;font-weight:700;">-{S['dn']:.1f}%</span>
-      </div>
-      <div style="font-size:.7rem;color:{rr_color};margin-top:6px;">
-        {rr_advice}
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Price distances
-    st.markdown('<div class="section-title">📏 ระยะห่างจากค่าเฉลี่ย</div>', unsafe_allow_html=True)
-    for sma_key, label in [(p['sma_s'],f"SMA{p['sma_s']}"),(p['sma_m'],f"SMA{p['sma_m']}"),(p['sma_l'],f"SMA{p['sma_l']}")]:
-        sma_v = I.get(f"sma{sma_key}", pr)
-        dist  = (pr/sma_v-1)*100
+    st.markdown(
+        '<div style="background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.25);border-radius:14px;padding:16px;margin-bottom:14px;text-align:center;">'
+        '<div style="font-size:.72rem;color:#8892b0;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">คะแนนรวม</div>'
+        '<div style="font-size:2.5rem;font-weight:700;color:' + sc_color + ';font-family:IBM Plex Mono,monospace;">' + str(sc) + '<span style="font-size:1rem;color:#636e72;">/100</span></div>'
+        '<div style="margin-top:8px;"><span class="chip ' + chip_cls + '" style="font-size:.85rem;padding:6px 16px;">' + S["rec"] + '</span></div>'
+        '</div>',
+        unsafe_allow_html=True
+    )
+    st.markdown('<div class="sec-title">ราคาเป้าหมาย</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="trow" style="grid-template-columns:1fr 1fr;gap:10px;">'
+        '<div class="tgt" style="padding:14px;"><div class="tl">จุดซื้อ</div><div class="tv te" style="font-size:1.1rem;margin-top:6px;">' + entry_str + '</div><div style="font-size:.65rem;color:#8892b0;margin-top:4px;">-1.5%</div></div>'
+        '<div class="tgt" style="padding:14px;"><div class="tl">Stop Loss</div><div class="tv ts" style="font-size:1.1rem;margin-top:6px;">' + sl_str + '</div><div style="font-size:.65rem;color:#8892b0;margin-top:4px;">-' + "{:.1f}%".format(S["dn"]) + ' ATRx1.5</div></div>'
+        '<div class="tgt" style="padding:14px;"><div class="tl">เป้า 1</div><div class="tv t1" style="font-size:1.1rem;margin-top:6px;">' + t1_str + '</div><div style="font-size:.65rem;color:#8892b0;margin-top:4px;">+' + "{:.1f}%".format(S["up"]) + ' ATRx2</div></div>'
+        '<div class="tgt" style="padding:14px;"><div class="tl">เป้า 2</div><div class="tv t2" style="font-size:1.1rem;margin-top:6px;">' + t2_str + '</div><div style="font-size:.65rem;color:#8892b0;margin-top:4px;">+' + "{:.1f}%".format(t2_pct) + ' ATRx3.5</div></div>'
+        '</div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        '<div style="background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.3);border-radius:12px;padding:14px;margin-top:12px;text-align:center;">'
+        '<div style="font-size:.72rem;color:#8892b0;text-transform:uppercase;letter-spacing:1px;">Risk / Reward</div>'
+        '<div style="font-size:2rem;font-weight:700;color:' + rr_color + ';font-family:IBM Plex Mono,monospace;margin:6px 0;">' + rr_str + '</div>'
+        '<div style="font-size:.78rem;color:#8892b0;">+' + "{:.1f}%".format(S["up"]) + ' vs -' + "{:.1f}%".format(S["dn"]) + '%</div>'
+        '<div style="font-size:.7rem;color:' + rr_color + ';margin-top:6px;">' + rr_advice + '</div>'
+        '</div>',
+        unsafe_allow_html=True
+    )
+    st.markdown('<div class="sec-title">ระยะห่างจากค่าเฉลี่ย</div>', unsafe_allow_html=True)
+    for sma_v, sma_str, lbl in [(I["sma_s"], sma_s_str, "SMA"+str(p["sma_s"])),
+                                 (I["sma_m"], sma_m_str, "SMA"+str(p["sma_m"])),
+                                 (I["sma_l"], sma_l_str, "SMA"+str(p["sma_l"]))]:
+        dist = (pr/sma_v-1)*100 if sma_v else 0
         bar_w = min(abs(dist)*3, 100)
-        bar_c = "#00b894" if dist>0 else "#d63031"
-        dist_str   = ("+" if dist >= 0 else "") + f"{dist:.1f}%"
-        bar_margin = "margin-left:auto;" if dist < 0 else ""
-        st.markdown(f"""
-        <div style="background:#1a1a2e;border-radius:10px;padding:10px 12px;margin-bottom:6px;">
-          <div style="display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:5px;">
-            <span style="color:#8892b0;">{label}</span>
-            <span style="color:{bar_c};font-weight:700;font-family:'IBM Plex Mono',monospace;">{dist_str}</span>
-          </div>
-          <div style="background:#2a2a4a;border-radius:4px;height:4px;">
-            <div style="height:4px;width:{bar_w}%;background:{bar_c};border-radius:4px;{bar_margin}"></div>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
+        bar_c = "#00b894" if dist >= 0 else "#d63031"
+        dist_sign = "+" if dist >= 0 else ""
+        dist_str2 = dist_sign + "{:.1f}%".format(dist)
+        bar_ml = "margin-left:auto;" if dist < 0 else ""
+        st.markdown(
+            '<div style="background:#1a1a2e;border-radius:10px;padding:10px 12px;margin-bottom:6px;">'
+            '<div style="display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:5px;">'
+            '<span style="color:#8892b0;">' + lbl + '</span>'
+            '<span style="color:' + bar_c + ';font-weight:700;font-family:IBM Plex Mono,monospace;">' + dist_str2 + '</span></div>'
+            '<div style="background:#2a2a4a;border-radius:4px;height:4px;">'
+            '<div style="height:4px;width:' + "{:.0f}%".format(bar_w) + ';background:' + bar_c + ';border-radius:4px;' + bar_ml + '"></div>'
+            '</div></div>',
+            unsafe_allow_html=True
+        )
 
-# -- TAB: สัญญาณ -----------------------------------------
 with tab_sig:
-    buy_n  = len(S["bs"]); sell_n = len(S["ss"]); neut_n = len(S["ns"])
-    total_n = buy_n+sell_n+neut_n if buy_n+sell_n+neut_n>0 else 1
-    st.markdown(f"""
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px;">
-      <div style="background:rgba(0,184,148,.1);border:1px solid #00b89440;border-radius:10px;padding:10px;text-align:center;">
-        <div style="font-size:1.4rem;font-weight:700;color:#00b894;">{buy_n}</div>
-        <div style="font-size:.68rem;color:#8892b0;">ซื้อ</div>
-      </div>
-      <div style="background:rgba(99,110,114,.1);border:1px solid #63637240;border-radius:10px;padding:10px;text-align:center;">
-        <div style="font-size:1.4rem;font-weight:700;color:#636e72;">{neut_n}</div>
-        <div style="font-size:.68rem;color:#8892b0;">กลาง</div>
-      </div>
-      <div style="background:rgba(214,48,49,.1);border:1px solid #d6303140;border-radius:10px;padding:10px;text-align:center;">
-        <div style="font-size:1.4rem;font-weight:700;color:#d63031;">{sell_n}</div>
-        <div style="font-size:.68rem;color:#8892b0;">ขาย</div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-
+    buy_n = len(S["bs"]); sell_n = len(S["ss"]); neut_n = len(S["ns"])
+    st.markdown(
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px;">'
+        '<div style="background:rgba(0,184,148,.1);border:1px solid rgba(0,184,148,.25);border-radius:10px;padding:10px;text-align:center;">'
+        '<div style="font-size:1.4rem;font-weight:700;color:#00b894;">' + str(buy_n) + '</div>'
+        '<div style="font-size:.68rem;color:#8892b0;">ซื้อ</div></div>'
+        '<div style="background:rgba(99,110,114,.1);border:1px solid rgba(99,110,114,.25);border-radius:10px;padding:10px;text-align:center;">'
+        '<div style="font-size:1.4rem;font-weight:700;color:#636e72;">' + str(neut_n) + '</div>'
+        '<div style="font-size:.68rem;color:#8892b0;">กลาง</div></div>'
+        '<div style="background:rgba(214,48,49,.1);border:1px solid rgba(214,48,49,.25);border-radius:10px;padding:10px;text-align:center;">'
+        '<div style="font-size:1.4rem;font-weight:700;color:#d63031;">' + str(sell_n) + '</div>'
+        '<div style="font-size:.68rem;color:#8892b0;">ขาย</div></div>'
+        '</div>',
+        unsafe_allow_html=True
+    )
     if S["bs"]:
-        st.markdown('<div class="section-title">🟢 สัญญาณซื้อ</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sec-title">สัญญาณซื้อ</div>', unsafe_allow_html=True)
         for sig in S["bs"]:
-            st.markdown(f'<div class="sig-item sig-buy">✅ {sig}</div>', unsafe_allow_html=True)
+            st.markdown('<div class="sig-item sig-buy">' + sig + '</div>', unsafe_allow_html=True)
     if S["ss"]:
-        st.markdown('<div class="section-title">🔴 สัญญาณขาย</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sec-title">สัญญาณขาย</div>', unsafe_allow_html=True)
         for sig in S["ss"]:
-            st.markdown(f'<div class="sig-item sig-sell">❌ {sig}</div>', unsafe_allow_html=True)
+            st.markdown('<div class="sig-item sig-sell">' + sig + '</div>', unsafe_allow_html=True)
     if S["ns"]:
-        st.markdown('<div class="section-title">⚪ ข้อมูลกลาง</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sec-title">ข้อมูลกลาง</div>', unsafe_allow_html=True)
         for sig in S["ns"]:
-            st.markdown(f'<div class="sig-item sig-neut">ℹ️ {sig}</div>', unsafe_allow_html=True)
+            st.markdown('<div class="sig-item sig-neut">' + sig + '</div>', unsafe_allow_html=True)
 
-# -- TAB: พื้นฐาน (Fundamental) -------------------------
 with tab_fund:
     if yf_info and isinstance(yf_info, dict) and yf_info.get("regularMarketPrice"):
         yi = yf_info
-        def _fv(key, fmt, fallback="N/A"):
+        def _fmtv(key, mult=1, fmt="{:.2f}", fallback="N/A"):
             v = yi.get(key)
             if v is None: return fallback
-            try: return fmt % v
-            except: return str(round(v, 4))
-        # Pre-compute all values - avoids format specs inside f-strings
-        fpe     = _fv('trailingPE',    '%.2f')
-        ffpe    = _fv('forwardPE',     '%.2f')
-        fpb     = _fv('priceToBook',   '%.2f')
-        froe_r  = yi.get('returnOnEquity')
-        froe    = f"{froe_r*100:.1f}%" if froe_r else "N/A"
-        feps    = _fv('trailingEps',   '%.2f')
-        fdiv_r  = yi.get('dividendYield')
-        fdiv    = f"{fdiv_r*100:.2f}%" if fdiv_r else "N/A"
-        fmc_r   = yi.get('marketCap')
-        fmc     = f"{fmc_r:,}" if fmc_r else "N/A"
-        fbeta   = _fv('beta',          '%.2f')
-        frev_r  = yi.get('revenueGrowth')
-        frev    = f"{frev_r*100:.1f}%" if frev_r else "N/A"
-        fmrg_r  = yi.get('profitMargins')
-        fmrg    = f"{fmrg_r*100:.1f}%" if fmrg_r else "N/A"
-        fde     = _fv('debtToEquity',  '%.2f')
-        fcr     = _fv('currentRatio',  '%.2f')
-        fbiz    = str(yi.get('longBusinessSummary','N/A'))[:300]
-        fund_html = (
-            '<div class="fundamental-grid">'
-            f'<div class="fund-box"><div class="fund-label">P/E Ratio (TTM)</div><div class="fund-val">{fpe}</div><div class="fund-desc">ราคาต่อกำไร</div></div>'
-            f'<div class="fund-box"><div class="fund-label">Forward P/E</div><div class="fund-val">{ffpe}</div><div class="fund-desc">P/E คาดการณ์</div></div>'
-            f'<div class="fund-box"><div class="fund-label">P/B Ratio</div><div class="fund-val">{fpb}</div><div class="fund-desc">ราคาต่อมูลค่าบัญชี</div></div>'
-            f'<div class="fund-box"><div class="fund-label">ROE</div><div class="fund-val">{froe}</div><div class="fund-desc">ผลตอบแทนผู้ถือหุ้น</div></div>'
-            f'<div class="fund-box"><div class="fund-label">EPS (TTM)</div><div class="fund-val">{feps}</div><div class="fund-desc">กำไรต่อหุ้น</div></div>'
-            f'<div class="fund-box"><div class="fund-label">Dividend Yield</div><div class="fund-val">{fdiv}</div><div class="fund-desc">อัตราปันผล</div></div>'
-            f'<div class="fund-box"><div class="fund-label">Market Cap</div><div class="fund-val" style="font-size:.82rem;">{fmc}</div><div class="fund-desc">มูลค่าตลาด</div></div>'
-            f'<div class="fund-box"><div class="fund-label">Beta</div><div class="fund-val">{fbeta}</div><div class="fund-desc">ความผันผวนเทียบตลาด</div></div>'
-            f'<div class="fund-box"><div class="fund-label">Revenue Growth</div><div class="fund-val">{frev}</div><div class="fund-desc">การเติบโตรายได้</div></div>'
-            f'<div class="fund-box"><div class="fund-label">Profit Margin</div><div class="fund-val">{fmrg}</div><div class="fund-desc">อัตรากำไร</div></div>'
-            f'<div class="fund-box"><div class="fund-label">Debt/Equity</div><div class="fund-val">{fde}</div><div class="fund-desc">หนี้สินต่อทุน</div></div>'
-            f'<div class="fund-box"><div class="fund-label">Current Ratio</div><div class="fund-val">{fcr}</div><div class="fund-desc">สภาพคล่อง</div></div>'
-            '</div>'
-            f'<div style="background:#1a1a2e;border-radius:10px;padding:12px;font-size:.78rem;color:#8892b0;line-height:1.7;">'
-            f'<span style="color:#e2e8f0;font-weight:600;">Business:</span> {fbiz}...'
-            '</div>'
-        )
-        st.markdown(fund_html, unsafe_allow_html=True)
+            try: return fmt.format(float(v)*mult)
+            except Exception: return fallback
+        mc_r = yi.get("marketCap")
+        mc_str = "{:,}".format(int(mc_r)) if mc_r else "N/A"
+        biz = str(yi.get("longBusinessSummary","N/A"))[:300]
+        rows2 = [
+            ("P/E (TTM)", _fmtv("trailingPE"), "ราคาต่อกำไร"),
+            ("Forward P/E", _fmtv("forwardPE"), "P/E คาดการณ์"),
+            ("P/B", _fmtv("priceToBook"), "ราคาต่อมูลค่าบัญชี"),
+            ("ROE", _fmtv("returnOnEquity", 100, "{:.1f}%"), "ผลตอบแทนผู้ถือหุ้น"),
+            ("EPS (TTM)", _fmtv("trailingEps"), "กำไรต่อหุ้น"),
+            ("Div Yield", _fmtv("dividendYield", 100, "{:.2f}%"), "อัตราปันผล"),
+            ("Market Cap", mc_str, "มูลค่าตลาด"),
+            ("Beta", _fmtv("beta"), "ความผันผวน"),
+            ("Rev Growth", _fmtv("revenueGrowth", 100, "{:.1f}%"), "การเติบโตรายได้"),
+            ("Margin", _fmtv("profitMargins", 100, "{:.1f}%"), "อัตรากำไร"),
+            ("D/E", _fmtv("debtToEquity"), "หนี้สินต่อทุน"),
+            ("Current Ratio", _fmtv("currentRatio"), "สภาพคล่อง"),
+        ]
+        html = '<div class="fund-grid">'
+        for lbl, val, desc in rows2:
+            html += ('<div class="fbox"><div class="flabel">' + lbl + '</div>'
+                     '<div class="fval">' + val + '</div>'
+                     '<div class="fdesc">' + desc + '</div></div>')
+        html += '</div>'
+        html += ('<div style="background:#1a1a2e;border-radius:10px;padding:12px;font-size:.78rem;color:#8892b0;line-height:1.7;">'
+                 '<span style="color:#e2e8f0;font-weight:600;">Business: </span>' + biz + '...</div>')
+        st.markdown(html, unsafe_allow_html=True)
     else:
-        st.markdown("""
-        <div class="warn-box">
-          ⚠️ ข้อมูลพื้นฐานต้องการ <strong>yfinance</strong><br>
-          ติดตั้งด้วย: <code>pip install yfinance</code><br>
-          แล้ว restart โปรแกรม - ข้อมูลจะแสดงสำหรับหุ้น US/CN โดยอัตโนมัติ<br>
-          สำหรับหุ้นไทย ข้อมูลพื้นฐานจาก SET.or.th ต้องใช้ Settrade API
-        </div>
-        """, unsafe_allow_html=True)
+        st.info("ข้อมูลพื้นฐานใช้ได้กับหุ้น US/CN ผ่าน yfinance\nติดตั้ง: pip install yfinance")
 ```
 
-# –––––––––––––––––––––––––––––––
+# —————————————————————
 
-# VIEW: LOGIN
+# VIEWS
 
-# –––––––––––––––––––––––––––––––
+# —————————————————————
 
 def view_login():
 render_header()
-
-```
-# แสดงสถานะ library
-ta_ok  = "✅" if PANDAS_TA_AVAILABLE  else "❌"
-st_ok  = "✅" if SETTRADE_AVAILABLE   else "❌"
-yf_ok  = "✅" if YFINANCE_AVAILABLE   else "❌"
-st.markdown(f"""
-<div style="background:#12122a;border:1px solid #2a2a4a;border-radius:12px;padding:12px 16px;margin-bottom:14px;">
-  <div style="font-size:.72rem;color:#8892b0;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">สถานะ Library</div>
-  <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:.82rem;">
-    <span>{st_ok} <strong style="color:#e2e8f0;">settrade-v2</strong> <span style="color:#636e72;">(ข้อมูลหุ้นไทย real-time)</span></span>
-    <span>{ta_ok} <strong style="color:#e2e8f0;">pandas_ta</strong> <span style="color:#636e72;">(คำนวณ indicator)</span></span>
-    <span>{yf_ok} <strong style="color:#e2e8f0;">yfinance</strong> <span style="color:#636e72;">(หุ้น US/CN)</span></span>
-  </div>
-  {lib_warn_html}
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-<div class="login-card">
-  <h2>🔐 เชื่อมต่อ Settrade API</h2>
-  <div class="login-sub">
-    กรอกค่าเดียวกับที่ใช้ใน my_bot.py<br>
-    หรือกดปุ่มด้านล่างเพื่อกรอกค่า SANDBOX อัตโนมัติ
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
-# ปุ่มกรอกค่าจาก my_bot.py อัตโนมัติ
-if st.button("📋 ใช้ค่าจาก my_bot.py (SANDBOX)", use_container_width=False):
-    st.session_state["prefill_id"]     = "MPRZz1Hymo6nR50A"
-    st.session_state["prefill_secret"] = "Te/3LKXBb+IM20T/ygcFAMWXjIgkadJ+o1cDstkjRDQ="
-    st.session_state["prefill_code"]   = "SANDBOX"
-    st.session_state["prefill_broker"] = "SANDBOX"
-    st.rerun()
-
-with st.form("login_form"):
-    app_id = st.text_input(
-        "APP_ID *",
-        value=st.session_state.get("prefill_id", ""),
-        placeholder="MPRZz1Hymo6nR50A",
-    )
-    app_secret = st.text_input(
-        "APP_SECRET *",
-        value=st.session_state.get("prefill_secret", ""),
-        placeholder="Te/3LKXBb+IM20T/...",
-        type="password",
-    )
-    app_code = st.text_input(
-        "APP_CODE *",
-        value=st.session_state.get("prefill_code", "SANDBOX"),
-        placeholder="SANDBOX",
-    )
-    broker_id = st.text_input(
-        "BROKER_ID *",
-        value=st.session_state.get("prefill_broker", "SANDBOX"),
-        placeholder="SANDBOX",
-    )
-    submitted = st.form_submit_button("🔐 เชื่อมต่อ Settrade", use_container_width=True)
-
+ta_ok  = “OK” if TA_OK  else “ยังไม่ติดตั้ง”
+st_ok  = “OK” if ST_OK  else “ยังไม่ติดตั้ง”
+yf_ok  = “OK” if YF_OK  else “ยังไม่ติดตั้ง”
+lib_warn = “” if ST_OK and TA_OK else “pip install settrade-v2 pandas_ta yfinance”
+st.markdown(
+‘<div style="background:#12122a;border:1px solid #2a2a4a;border-radius:12px;padding:12px 16px;margin-bottom:14px;">’
+‘<div style="font-size:.72rem;color:#8892b0;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">สถานะ Library</div>’
+‘<div style="font-size:.82rem;">’
+‘settrade-v2: <strong style="color:#e2e8f0;">’ + st_ok + ‘</strong>  |  ’
+‘pandas_ta: <strong style="color:#e2e8f0;">’ + ta_ok + ‘</strong>  |  ’
+‘yfinance: <strong style="color:#e2e8f0;">’ + yf_ok + ‘</strong>’
+‘</div>’
++ (’<div style="margin-top:8px;font-size:.75rem;color:#fdcb6e;">ติดตั้ง: ’ + lib_warn + ‘</div>’ if lib_warn else ‘’)
++ ‘</div>’,
+unsafe_allow_html=True
+)
+st.markdown(’<div class="login-card"><h2>เชื่อมต่อ Settrade API</h2><div class="login-sub">กรอก credential จาก developer.settrade.com หรือกด ใช้ SANDBOX ด้านล่าง</div></div>’, unsafe_allow_html=True)
+if st.button(“ใช้ค่า SANDBOX (จาก my_bot.py)”, use_container_width=False):
+st.session_state.prefill_id     = “MPRZz1Hymo6nR50A”
+st.session_state.prefill_secret = “Te/3LKXBb+IM20T/ygcFAMWXjIgkadJ+o1cDstkjRDQ=”
+st.session_state.prefill_code   = “SANDBOX”
+st.session_state.prefill_broker = “SANDBOX”
+st.rerun()
+with st.form(“login_form”):
+app_id     = st.text_input(“APP_ID”, value=st.session_state.prefill_id)
+app_secret = st.text_input(“APP_SECRET”, value=st.session_state.prefill_secret, type=“password”)
+app_code   = st.text_input(“APP_CODE”, value=st.session_state.prefill_code)
+broker_id  = st.text_input(“BROKER_ID”, value=st.session_state.prefill_broker)
+submitted  = st.form_submit_button(“เชื่อมต่อ Settrade”, use_container_width=True)
 if submitted:
-    if not SETTRADE_AVAILABLE:
-        st.markdown("""
-        <div class="error-box">
-          ❌ <strong>settrade_v2 ไม่ได้ติดตั้ง</strong><br><br>
-          ให้รันคำสั่งนี้ใน Terminal/CMD <strong>เดียวกับที่เปิด my_bot.py ได้</strong>:<br>
-          <code>pip install settrade-v2 pandas_ta yfinance</code><br><br>
-          แล้วรัน streamlit ใหม่ในโฟลเดอร์เดียวกัน
-        </div>
-        """, unsafe_allow_html=True)
-    elif not app_id.strip() or not app_secret.strip():
-        st.markdown('<div class="error-box">❌ กรุณากรอก APP_ID และ APP_SECRET</div>', unsafe_allow_html=True)
-    else:
-        with st.spinner("กำลังเชื่อมต่อ Settrade..."):
-            try:
-                investor = Investor(
-                    app_id=app_id.strip(),
-                    app_secret=app_secret.strip(),
-                    app_code=app_code.strip(),
-                    broker_id=broker_id.strip(),
-                )
-                mkt_api = investor.Market()
-                rt_api  = investor.Realtime()
-                # ทดสอบ - เหมือน my_bot.py ดึง PTT ก่อน
-                test = mkt_api.get_candlestick("PTT", interval="1d", limit=5)
-                if test:
-                    st.session_state.update(dict(
-                        logged_in=True, market_api=mkt_api, realtime_api=rt_api,
-                        view="scan",
-                    ))
-                    st.success("✅ เชื่อมต่อ Settrade สำเร็จ!")
-                    time.sleep(0.5)
-                    st.rerun()
-                else:
-                    raise ValueError("API ไม่ตอบสนอง")
-            except Exception as e:
-                st.markdown(f'<div class="error-box">❌ เชื่อมต่อไม่สำเร็จ<br><small>{str(e)}</small></div>', unsafe_allow_html=True)
-
-st.markdown("---")
-col_skip, col_yf = st.columns(2)
-with col_skip:
-    if st.button("🔶 ข้าม / ใช้ Mock Data", use_container_width=True):
-        st.session_state.update(dict(logged_in=False, view="scan"))
-        st.rerun()
-with col_yf:
-    if YFINANCE_AVAILABLE:
-        if st.button("📡 ข้าม / ใช้ Yahoo Finance", use_container_width=True):
-            st.session_state.update(dict(logged_in=False, view="scan"))
-            st.rerun()
-    else:
-        st.markdown('<div style="text-align:center;font-size:.72rem;color:#636e72;padding:8px;">pip install yfinance<br>เพื่อดูหุ้น US/CN จริง</div>', unsafe_allow_html=True)
-
-st.markdown('<div class="warn-box">⚠️ APP_SECRET เป็นข้อมูลลับ - อย่าแชร์หรือบันทึกในที่สาธารณะ</div>', unsafe_allow_html=True)
-```
-
-# –––––––––––––––––––––––––––––––
-
-# VIEW: SCAN
-
-# –––––––––––––––––––––––––––––––
+if not ST_OK:
+st.markdown(’<div class="err-box">settrade_v2 ไม่ได้ติดตั้ง: pip install settrade-v2</div>’, unsafe_allow_html=True)
+elif not app_id.strip() or not app_secret.strip():
+st.markdown(’<div class="err-box">กรุณากรอก APP_ID และ APP_SECRET</div>’, unsafe_allow_html=True)
+else:
+with st.spinner(“กำลังเชื่อมต่อ…”):
+try:
+inv = Investor(app_id=app_id.strip(), app_secret=app_secret.strip(),
+app_code=app_code.strip(), broker_id=broker_id.strip())
+mkt_api = inv.Market(); rt_api = inv.Realtime()
+test = mkt_api.get_candlestick(“PTT”, interval=“1d”, limit=5)
+if test:
+st.session_state.logged_in   = True
+st.session_state.market_api  = mkt_api
+st.session_state.realtime_api = rt_api
+st.session_state.view = “scan”
+st.rerun()
+else:
+raise ValueError(“API ไม่ตอบสนอง”)
+except Exception as e:
+st.markdown(’<div class="err-box">เชื่อมต่อไม่สำเร็จ: ’ + str(e) + ‘</div>’, unsafe_allow_html=True)
+st.markdown(”—”)
+c1, c2 = st.columns(2)
+with c1:
+if st.button(“ข้าม / Mock Data”, use_container_width=True):
+st.session_state.view = “scan”; st.rerun()
+with c2:
+if st.button(“ข้าม / Yahoo Finance”, use_container_width=True):
+st.session_state.view = “scan”; st.rerun()
 
 def view_scan():
 render_header()
-render_param_expander()
+render_params()
 p = get_params()
-
-```
-# Nav bar
-col_n1, col_n2 = st.columns([3,1])
+col_n1, col_n2 = st.columns([3, 1])
 with col_n2:
-    if st.button("🔍 วิเคราะห์หุ้น", use_container_width=True):
-        st.session_state.view = "manual"
-        st.rerun()
-
-# Market selector
-st.markdown('<div class="section-title">1️⃣ เลือกตลาดหุ้น</div>', unsafe_allow_html=True)
+if st.button(“วิเคราะห์หุ้น”, use_container_width=True):
+st.session_state.view = “manual”; st.rerun()
+st.markdown(’<div class="sec-title">1 เลือกตลาดหุ้น</div>’, unsafe_allow_html=True)
 mkt_cols = st.columns(3)
-for i, (mkt_key, mkt_data) in enumerate(MARKETS.items()):
-    with mkt_cols[i]:
-        is_sel = st.session_state.market == mkt_key
-        if st.button(
-            f"{mkt_data['flag']} **{mkt_key}**\n{mkt_data['desc']}",
-            key=f"mkt_{mkt_key}",
-            use_container_width=True,
-            type="primary" if is_sel else "secondary",
-        ):
-            st.session_state.market = mkt_key
-            st.rerun()
-
+mkt_labels = {“SET”:“TH SET\nSET50/100/mai”, “US”:“US Tech\nNASDAQ/NYSE”, “CN”:“CN Tech\nNYSE ADR”}
+for i, mkt_key in enumerate([“SET”,“US”,“CN”]):
+with mkt_cols[i]:
+is_sel = st.session_state.market == mkt_key
+if st.button(mkt_labels[mkt_key], key=“mkt_”+mkt_key, use_container_width=True,
+type=“primary” if is_sel else “secondary”):
+st.session_state.market = mkt_key; st.rerun()
 mkt_key = st.session_state.market
 if not mkt_key:
-    st.markdown('<div style="text-align:center;padding:32px;color:#636e72;font-size:.88rem;">👆 เลือกตลาดก่อน แล้วกดสแกน</div>', unsafe_allow_html=True)
-    return
-
-mkt  = MARKETS[mkt_key]
-cur  = mkt["currency"]
-n    = len(mkt["stocks"])
-use_live = st.session_state.logged_in and mkt_key == "SET"
-
-src_tag = "⚡ Settrade Real-time" if use_live else ("📡 Yahoo Finance" if YFINANCE_AVAILABLE else "🔶 Mock")
-st.markdown(f"""
-<div style="background:#12122a;border:1px solid rgba(108,99,255,.3);border-radius:10px;padding:10px 14px;margin:8px 0 14px;display:flex;justify-content:space-between;align-items:center;">
-  <span style="color:#e2e8f0;font-size:.85rem;">{mkt['flag']} <strong>{mkt['name']}</strong> · {n} หุ้น · {cur}</span>
-  <span style="font-size:.68rem;color:#8892b0;">{src_tag}</span>
-</div>
-""", unsafe_allow_html=True)
-
-# Filter row
-c1,c2 = st.columns(2)
+st.markdown(’<div style="text-align:center;padding:32px;color:#636e72;">เลือกตลาดก่อน</div>’, unsafe_allow_html=True)
+return
+mkt = MARKETS[mkt_key]; cur = mkt[“currency”]; n = len(mkt[“stocks”])
+use_live = st.session_state.logged_in and mkt_key == “SET”
+src_lbl = “Settrade Live” if use_live else (“Yahoo Finance” if YF_OK else “Mock”)
+st.markdown(
+‘<div style="background:#12122a;border:1px solid rgba(108,99,255,.3);border-radius:10px;padding:10px 14px;margin:8px 0 14px;display:flex;justify-content:space-between;align-items:center;">’
+‘<span style="color:#e2e8f0;font-size:.85rem;"><strong>’ + mkt[“name”] + ‘</strong> · ’ + str(n) + ’ หุ้น · ’ + cur + ‘</span>’
+‘<span style="font-size:.68rem;color:#8892b0;">’ + src_lbl + ‘</span></div>’,
+unsafe_allow_html=True
+)
+c1, c2 = st.columns(2)
 with c1:
-    filt_sig = st.multiselect("สัญญาณ",["🟢 ซื้อ","🟡 เฝ้าระวัง","⚪ ถือ","🔴 ขาย"],
-        default=["🟢 ซื้อ","🟡 เฝ้าระวัง"],key="filt_sig",label_visibility="collapsed",placeholder="เลือกสัญญาณ")
+filt_sig = st.multiselect(“สัญญาณ”, [“🟢 ซื้อ”,“🟡 เฝ้าระวัง”,“⚪ ถือ”,“🔴 ขาย”],
+default=[“🟢 ซื้อ”,“🟡 เฝ้าระวัง”], key=“filt_sig”, label_visibility=“collapsed”, placeholder=“เลือกสัญญาณ”)
 with c2:
-    sort_by = st.selectbox("เรียงตาม",["Score ↓","RSI ↑","Change% ↓","ADX ↓"],
-        key="sort_by",label_visibility="collapsed")
-
-st.markdown('<div class="section-title">2️⃣ สแกน</div>', unsafe_allow_html=True)
-if st.button(f"🔍 สแกน {mkt['flag']} {mkt_key} ({n} หุ้น)", use_container_width=True):
-    results = []
-    prog = st.progress(0)
-    status_txt = st.empty()
-    for i,(sym,name) in enumerate(mkt["stocks"]):
-        status_txt.markdown(f'<div style="text-align:center;font-size:.75rem;color:#8892b0;">สแกน {sym} ... ({i+1}/{n})</div>', unsafe_allow_html=True)
-        try:
-            df, info = get_data(sym, mkt_key, use_settrade=use_live, p=p)
-            I = compute_all(df, p)
-            S = score_and_signal(I, p)
-            results.append(dict(Symbol=sym,Name=name,Market=mkt_key,
-                Price=round(I["price"],2),Change=round(I["chg"],2),
-                RSI=round(I["rsi"],1),ADX=round(I["adx"],1),
-                BB=round(I["bbp"],2),VR=round(I["vol_r"],2),
-                Score=S["sc"],Signal=S["rec"],SigCls=S["cls"],
-                Entry=S["entry"],T1=S["t1"],T2=S["t2"],SL=S["sl"],RR=S["rr"],
-                _I=I,_S=S,_info=info,
-            ))
-        except Exception: pass
-        prog.progress((i+1)/n)
-    prog.empty(); status_txt.empty()
-    st.session_state.scan_results[mkt_key] = pd.DataFrame(results)
-
-# Results
+sort_by = st.selectbox(“เรียง”, [“Score”,“RSI”,“Change”,“ADX”], key=“sort_by”, label_visibility=“collapsed”)
+st.markdown(’<div class="sec-title">2 สแกน</div>’, unsafe_allow_html=True)
+if st.button(“สแกน “ + mkt[“flag”] + “ “ + mkt_key + “ (” + str(n) + “ หุ้น)”, use_container_width=True):
+results = []; prog = st.progress(0); stxt = st.empty()
+for i, (sym, name) in enumerate(mkt[“stocks”]):
+stxt.markdown(’<div style="text-align:center;font-size:.75rem;color:#8892b0;">สแกน ’ + sym + ’ (’ + str(i+1) + ‘/’ + str(n) + ‘)</div>’, unsafe_allow_html=True)
+try:
+df, info = get_data(sym, mkt_key)
+I = compute_indicators(df, p); S = score_stock(I, p)
+results.append(dict(Symbol=sym, Name=name, Market=mkt_key,
+Price=round(I[“price”],2), Change=round(I[“chg”],2),
+RSI=round(I[“rsi”],1), ADX=round(I[“adx”],1),
+BB=round(I[“bbp”],2), VR=round(I[“vol_r”],2),
+Score=S[“sc”], Signal=S[“rec”], SigCls=S[“cls”],
+Entry=S[“entry”], T1=S[“t1”], T2=S[“t2”], SL=S[“sl”], RR=S[“rr”],
+_I=I, _S=S, *info=info))
+except Exception:
+pass
+prog.progress((i+1)/n)
+prog.empty(); stxt.empty()
+st.session_state.scan_results[mkt_key] = pd.DataFrame(results)
 df_res = st.session_state.scan_results.get(mkt_key)
-if df_res is None or len(df_res)==0:
-    return
-
-sigs = filt_sig or ["🟢 ซื้อ","🟡 เฝ้าระวัง","⚪ ถือ","🔴 ขาย"]
-df_f = df_res[
-    (df_res["Score"] >= p["min_score"]) &
-    (df_res["RR"]    >= p["min_rr"]) &
-    (df_res["ADX"]   >= p["min_adx"]) &
-    (df_res["Signal"].isin(sigs))
-].copy()
-
-sm={"Score ↓":"Score","RSI ↑":"RSI","Change% ↓":"Change","ADX ↓":"ADX"}
-sa={"Score ↓":False,"RSI ↑":True,"Change% ↓":False,"ADX ↓":False}
-df_f=df_f.sort_values(sm.get(sort_by,"Score"),ascending=sa.get(sort_by,False))
-
-buy_n=len(df_res[df_res["SigCls"]=="buy"]); sell_n=len(df_res[df_res["SigCls"]=="sell"])
-watch_n=len(df_res[df_res["SigCls"]=="watch"]); avg_sc=df_res["Score"].mean()
-st.markdown(f"""
-<div class="update-bar">
-  <span>พบ <strong style="color:#e2e8f0;">{len(df_f)}</strong> / {len(df_res)} หุ้น</span>
-  <span>🟢{buy_n} 🟡{watch_n} 🔴{sell_n} · avg {avg_sc:.0f}pt</span>
-</div>""", unsafe_allow_html=True)
-
-st.markdown('<div class="section-title">3️⃣ ผลการสแกน - แตะ "วิเคราะห์เจาะลึก" ใต้แต่ละหุ้น</div>', unsafe_allow_html=True)
-
-if len(df_f)==0:
-    st.markdown('<div style="text-align:center;padding:32px;color:#636e72;">ไม่มีหุ้นผ่านเงื่อนไข ลองปรับ Parameters</div>', unsafe_allow_html=True)
-    return
-
-for _,row in df_f.iterrows():
-    chg_cls="change-up" if row["Change"]>=0 else "change-dn"
-    chip_cls=f"chip-{row['SigCls']}"; score_cls="score-h" if row["Score"]>=65 else "score-m" if row["Score"]>=45 else "score-l"
-    chg_sym="+" if row["Change"]>=0 else ""
-    price_s  = f"{price_s}"
-    entry_s  = f"{entry_s}"
-    t1_s     = f"{t1_s}"
-    t2_s     = f"{t2_s}"
-    sl_s     = f"{sl_s}"
-    rr_s     = f"{rr_s}"
-    score_s  = f"{score_s}"
-    change_s = f"{change_s}"
-    rsi_c="bull" if row["RSI"]<p["rsi_os"] else "bear" if row["RSI"]>p["rsi_ob"] else ""
-    bb_c="bull" if row["BB"]<0.2 else "bear" if row["BB"]>0.8 else ""
-    vr_c="bull" if row["VR"]>1.5 else ""
-    st.markdown(f"""
-    <div class="stock-card {row['SigCls']}">
-      <div class="sc-top">
-        <div><div class="sc-symbol">{row['Symbol']}</div><div class="sc-name">{row['Name']}</div></div>
-        <div><div class="sc-price">{price_s}</div><div class="sc-change {chg_cls}">{change_s}</div></div>
-      </div>
-      <div class="sc-bars">
-        <div class="sc-bar-item"><div class="sc-bar-label">RSI</div><div class="sc-bar-val {rsi_c}">{row['RSI']:.0f}</div></div>
-        <div class="sc-bar-item"><div class="sc-bar-label">ADX</div><div class="sc-bar-val">{row['ADX']:.0f}</div></div>
-        <div class="sc-bar-item"><div class="sc-bar-label">BB%</div><div class="sc-bar-val {bb_c}">{row['BB']:.2f}</div></div>
-        <div class="sc-bar-item"><div class="sc-bar-label">Vol</div><div class="sc-bar-val {vr_c}">{row['VR']:.1f}x</div></div>
-      </div>
-      <div class="target-row">
-        <div class="tgt"><div class="tgt-label">ซื้อ</div><div class="tgt-val tgt-entry">{entry_s}</div></div>
-        <div class="tgt"><div class="tgt-label">เป้า 1</div><div class="tgt-val tgt-t1">{t1_s}</div></div>
-        <div class="tgt"><div class="tgt-label">เป้า 2</div><div class="tgt-val tgt-t2">{t2_s}</div></div>
-        <div class="tgt"><div class="tgt-label">SL</div><div class="tgt-val tgt-sl">{sl_s}</div></div>
-      </div>
-      <div class="sc-bottom">
-        <div><span class="signal-chip {chip_cls}">{row['Signal']}</span>
-          <span style="font-size:.7rem;color:#8892b0;margin-left:8px;">R/R <span style="color:#6c63ff;font-weight:700;">{rr_s}</span></span>
-        </div>
-        <div class="score-ring {score_cls}">{score_s}</div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    if st.button(f"🔍 วิเคราะห์ {row['Symbol']} เจาะลึก", key=f"da_{row['Symbol']}_{mkt_key}", use_container_width=True):
-        st.session_state.update(dict(detail_sym=row["Symbol"],detail_mkt=mkt_key,view="detail"))
-        st.rerun()
-```
-
-# –––––––––––––––––––––––––––––––
-
-# VIEW: MANUAL - วิเคราะห์หุ้นรายตัว (พิมพ์ชื่อ)
-
-# –––––––––––––––––––––––––––––––
+if df_res is None or len(df_res) == 0:
+return
+sigs = filt_sig or [“🟢 ซื้อ”,“🟡 เฝ้าระวัง”,“⚪ ถือ”,“🔴 ขาย”]
+df_f = df_res[(df_res[“Score”] >= p[“min_score”]) & (df_res[“RR”] >= p[“min_rr”]) & (df_res[“Signal”].isin(sigs))].copy()
+sort_map = {“Score”:“Score”,“RSI”:“RSI”,“Change”:“Change”,“ADX”:“ADX”}
+df_f = df_f.sort_values(sort_map.get(sort_by,“Score”), ascending=False)
+buy_n = len(df_res[df_res[“SigCls”]==“buy”]); sell_n = len(df_res[df_res[“SigCls”]==“sell”])
+watch_n = len(df_res[df_res[“SigCls”]==“watch”]); avg_sc = df_res[“Score”].mean()
+st.markdown(
+‘<div class="upd-bar">’
+‘<span>พบ <strong style="color:#e2e8f0;">’ + str(len(df_f)) + ‘</strong> / ’ + str(len(df_res)) + ’ หุ้น</span>’
+‘<span>Buy:’ + str(buy_n) + ’ Watch:’ + str(watch_n) + ’ Sell:’ + str(sell_n) + ’ avg ’ + “{:.0f}pt”.format(avg_sc) + ‘</span>’
+‘</div>’,
+unsafe_allow_html=True
+)
+st.markdown(’<div class="sec-title">3 ผลการสแกน</div>’, unsafe_allow_html=True)
+if len(df_f) == 0:
+st.info(“ไม่มีหุ้นผ่านเงื่อนไข ลองปรับ Parameters”)
+return
+for *, row in df_f.iterrows():
+chg_cls  = “cup” if row[“Change”] >= 0 else “cdn”
+chip_cls = “chip-” + row[“SigCls”]
+scls     = “sh” if row[“Score”]>=65 else “sm” if row[“Score”]>=45 else “sl”
+chg_sym  = “+” if row[“Change”] >= 0 else “”
+rsi_c    = “bull” if row[“RSI”]<p[“rsi_os”] else “bear” if row[“RSI”]>p[“rsi_ob”] else “”
+bb_c     = “bull” if row[“BB”]<0.2 else “bear” if row[“BB”]>0.8 else “”
+vr_c     = “bull” if row[“VR”]>1.5 else “”
+price_s  = cur + “{:,.2f}”.format(row[“Price”])
+entry_s  = cur + “{:,.2f}”.format(row[“Entry”])
+t1_s     = cur + “{:,.2f}”.format(row[“T1”])
+t2_s     = cur + “{:,.2f}”.format(row[“T2”])
+sl_s     = cur + “{:,.2f}”.format(row[“SL”])
+chg_s    = chg_sym + “{:.2f}%”.format(row[“Change”])
+rr_s     = “1:” + “{:.2f}”.format(row[“RR”])
+score_s  = str(int(row[“Score”]))
+st.markdown(
+‘<div class=“stock-card ’ + row[“SigCls”] + ‘”>’
+‘<div class="sc-top">’
+‘<div><div class="sc-sym">’ + row[“Symbol”] + ‘</div><div class="sc-name">’ + row[“Name”] + ‘</div></div>’
+‘<div><div class="sc-price">’ + price_s + ‘</div><div class="sc-chg ' + chg_cls + '">’ + chg_s + ‘</div></div>’
+‘</div>’
+‘<div class="sc-bars">’
+‘<div class="sbi"><div class="sbl">RSI</div><div class="sbv ' + rsi_c + '">’ + “{:.0f}”.format(row[“RSI”]) + ‘</div></div>’
+‘<div class="sbi"><div class="sbl">ADX</div><div class="sbv">’ + “{:.0f}”.format(row[“ADX”]) + ‘</div></div>’
+‘<div class="sbi"><div class="sbl">BB%</div><div class="sbv ' + bb_c + '">’ + “{:.2f}”.format(row[“BB”]) + ‘</div></div>’
+‘<div class="sbi"><div class="sbl">Vol</div><div class="sbv ' + vr_c + '">’ + “{:.1f}x”.format(row[“VR”]) + ‘</div></div>’
+‘</div>’
+‘<div class="trow">’
+‘<div class="tgt"><div class="tl">ซื้อ</div><div class="tv te">’ + entry_s + ‘</div></div>’
+‘<div class="tgt"><div class="tl">เป้า 1</div><div class="tv t1">’ + t1_s + ‘</div></div>’
+‘<div class="tgt"><div class="tl">เป้า 2</div><div class="tv t2">’ + t2_s + ‘</div></div>’
+‘<div class="tgt"><div class="tl">SL</div><div class="tv ts">’ + sl_s + ‘</div></div>’
+‘</div>’
+‘<div class="sc-bot">’
+‘<div><span class="chip ' + chip_cls + '">’ + row[“Signal”] + ‘</span>’
+’ <span style="font-size:.7rem;color:#8892b0;">R/R <span style="color:#6c63ff;font-weight:700;">’ + rr_s + ‘</span></span></div>’
+‘<div class="sring ' + scls + '">’ + score_s + ‘</div>’
+‘</div></div>’,
+unsafe_allow_html=True
+)
+if st.button(“วิเคราะห์ “ + row[“Symbol”] + “ เจาะลึก”, key=“da*”+row[“Symbol”]+”*”+mkt_key, use_container_width=True):
+st.session_state.detail_sym = row[“Symbol”]
+st.session_state.detail_mkt = mkt_key
+st.session_state.view = “detail”
+st.rerun()
 
 def view_manual():
 render_header()
-if st.button(“← กลับหน้าสแกน”):
+if st.button(“กลับหน้าสแกน”):
 st.session_state.view = “scan”; st.rerun()
-
-```
-st.markdown('<div class="section-title">🔍 วิเคราะห์หุ้นรายตัว</div>', unsafe_allow_html=True)
-st.markdown("""
-<div class="info-box">
-  พิมพ์ชื่อย่อหุ้น (Ticker) แล้วเลือกตลาด<br>
-  🇹🇭 หุ้นไทย: <strong>ADVANC, KBANK, PTT</strong><br>
-  🇺🇸 US: <strong>AAPL, NVDA, TSLA</strong><br>
-  🇨🇳 CN: <strong>BABA, NIO, BIDU</strong>
-</div>
-""", unsafe_allow_html=True)
-
-with st.form("manual_form"):
-    sym_input = st.text_input("ชื่อหุ้น (Ticker) *", placeholder="เช่น ADVANC, KBANK, AAPL, BABA",
-                               max_chars=10)
-    mkt_sel   = st.selectbox("ตลาด *", ["SET 🇹🇭","US 🇺🇸","CN 🇨🇳"],
-                              help="เลือกให้ตรงเพื่อกำหนดสกุลเงินและวิธีดึงข้อมูล")
-    submitted = st.form_submit_button("🔍 วิเคราะห์เจาะลึก", use_container_width=True)
-
+st.markdown(’<div class="sec-title">วิเคราะห์หุ้นรายตัว</div>’, unsafe_allow_html=True)
+st.markdown(’<div class="info-box">พิมพ์ชื่อย่อหุ้น (Ticker) แล้วเลือกตลาด<br>TH: ADVANC, KBANK, PTT | US: AAPL, NVDA | CN: BABA, NIO</div>’, unsafe_allow_html=True)
+with st.form(“manual_form”):
+sym_input = st.text_input(“ชื่อหุ้น (Ticker)”, placeholder=“เช่น ADVANC, AAPL, BABA”, max_chars=10)
+mkt_sel   = st.selectbox(“ตลาด”, [“SET - ไทย”,“US - สหรัฐ”,“CN - จีน”])
+submitted = st.form_submit_button(“วิเคราะห์เจาะลึก”, use_container_width=True)
 if submitted and sym_input.strip():
-    sym = sym_input.strip().upper()
-    mkt_map = {"SET 🇹🇭":"SET","US 🇺🇸":"US","CN 🇨🇳":"CN"}
-    mkt_key = mkt_map[mkt_sel]
-    p = get_params()
-    use_live = st.session_state.logged_in and mkt_key=="SET"
-
-    with st.spinner(f"กำลังดึงข้อมูล {sym}..."):
-        try:
-            df, info = get_data(sym, mkt_key, use_settrade=use_live, p=p)
-            I = compute_all(df, p)
-            S = score_and_signal(I, p)
-            yf_inf = info.get("yf") if info.get("source")=="yfinance" else None
-
-            # แสดงผล
-            render_param_expander()
-            render_deep_analysis(sym, mkt_key, I, S, info, yf_info=yf_inf)
-
-            src_msg = {"settrade_live":"⚡ Settrade Real-time","yfinance":"📡 Yahoo Finance","mock":"🔶 Mock Data"}.get(info.get("source","mock"),"")
-            st.markdown(f'<div class="update-bar"><span>แหล่งข้อมูล: {src_msg}</span><span>{datetime.now().strftime("%H:%M:%S")}</span></div>', unsafe_allow_html=True)
-
-        except Exception as e:
-            st.markdown(f'<div class="error-box">❌ ดึงข้อมูลไม่ได้<br><small>{sym} - {str(e)}</small></div>', unsafe_allow_html=True)
-            st.markdown('<div class="warn-box">💡 ลองตรวจสอบ Ticker ให้ถูกต้อง หรือเปลี่ยนตลาดที่เลือก</div>', unsafe_allow_html=True)
-
-render_param_expander()
-```
-
-# –––––––––––––––––––––––––––––––
-
-# VIEW: DETAIL - วิเคราะห์เจาะลึกจากผลสแกน
-
-# –––––––––––––––––––––––––––––––
+sym = sym_input.strip().upper()
+mkt_map = {“SET - ไทย”:“SET”,“US - สหรัฐ”:“US”,“CN - จีน”:“CN”}
+mkt_key = mkt_map[mkt_sel]
+p = get_params()
+with st.spinner(“กำลังดึงข้อมูล “ + sym + “…”):
+try:
+df, info = get_data(sym, mkt_key)
+I = compute_indicators(df, p); S = score_stock(I, p)
+yf_inf = info.get(“yf”) if info.get(“source”) == “yfinance” else None
+render_params()
+render_deep(sym, mkt_key, I, S, info, yf_info=yf_inf)
+except Exception as e:
+st.markdown(’<div class="err-box">ดึงข้อมูลไม่ได้: ’ + str(e) + ‘</div>’, unsafe_allow_html=True)
+else:
+render_params()
 
 def view_detail():
 render_header()
-col_b1, col_b2 = st.columns(2)
-with col_b1:
-if st.button(“← กลับรายการหุ้น”, use_container_width=True):
+c1, c2 = st.columns(2)
+with c1:
+if st.button(“กลับรายการหุ้น”, use_container_width=True):
 st.session_state.view = “scan”; st.rerun()
-with col_b2:
-if st.button(“🔍 วิเคราะห์หุ้นอื่น”, use_container_width=True):
+with c2:
+if st.button(“วิเคราะห์หุ้นอื่น”, use_container_width=True):
 st.session_state.view = “manual”; st.rerun()
-
-```
-sym     = st.session_state.detail_sym
-mkt_key = st.session_state.detail_mkt
+sym = st.session_state.detail_sym; mkt_key = st.session_state.detail_mkt
 p = get_params()
-use_live = st.session_state.logged_in and mkt_key=="SET"
-
 cached = st.session_state.scan_results.get(mkt_key)
-if cached is not None and sym in cached["Symbol"].values:
-    row  = cached[cached["Symbol"]==sym].iloc[0]
-    I,S  = row["_I"],row["_S"]
-    info = row.get("_info",{"source":"mock"})
-    yf_inf = None
-    # ลอง fetch yfinance เพิ่มเพื่อข้อมูลพื้นฐาน
-    if YFINANCE_AVAILABLE and mkt_key!="SET":
-        try:
-            _,yf_inf_dict = fetch_candles_yfinance(sym)
-            yf_inf = yf_inf_dict
-        except: pass
+if cached is not None and sym in cached[“Symbol”].values:
+row = cached[cached[“Symbol”]==sym].iloc[0]
+I = row[”_I”]; S = row[”_S”]; info = row.get(”_info”, {“source”:“mock”})
+yf_inf = None
+if YF_OK and mkt_key != “SET”:
+try:
+_, yf_inf = fetch_yfinance(sym)
+except Exception:
+pass
 else:
-    with st.spinner(f"กำลังดึงข้อมูล {sym}..."):
-        df, info = get_data(sym, mkt_key, use_settrade=use_live, p=p)
-        I = compute_all(df, p)
-        S = score_and_signal(I, p)
-        yf_inf = info.get("yf")
+with st.spinner(“กำลังดึงข้อมูล “ + sym + “…”):
+df, info = get_data(sym, mkt_key)
+I = compute_indicators(df, p); S = score_stock(I, p)
+yf_inf = info.get(“yf”)
+render_params()
+render_deep(sym, mkt_key, I, S, info, yf_info=yf_inf)
 
-render_param_expander()
-render_deep_analysis(sym, mkt_key, I, S, info, yf_info=yf_inf)
-```
-
-# –––––––––––––––––––––––––––––––
+# —————————————————————
 
 # ROUTER
 
-# –––––––––––––––––––––––––––––––
+# —————————————————————
 
 view = st.session_state.view
-
 if view == “login”:
 view_login()
 elif view == “scan”:
@@ -1453,12 +1061,9 @@ view_manual()
 elif view == “detail”:
 view_detail()
 
-# Footer
-
-st.markdown(”””
-
-<div style="text-align:center;padding:20px 0 10px;color:#2a2a4a;font-size:.68rem;line-height:1.8;">
-  ⚠️ ใช้เพื่อการศึกษาเท่านั้น · ไม่ใช่คำแนะนำการลงทุน<br>
-  การลงทุนมีความเสี่ยง ผู้ลงทุนควรศึกษาข้อมูลก่อนตัดสินใจ
-</div>
-""", unsafe_allow_html=True)
+st.markdown(
+‘<div style="text-align:center;padding:20px 0 10px;color:#2a2a4a;font-size:.68rem;line-height:1.8;">’
+‘ใช้เพื่อการศึกษาเท่านั้น · ไม่ใช่คำแนะนำการลงทุน’
+‘</div>’,
+unsafe_allow_html=True
+)
