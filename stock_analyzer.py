@@ -810,7 +810,7 @@ def view_login():
             with st.spinner("กำลังเชื่อมต่อ..."):
                 try:
                     inv = Investor(app_id=app_id.strip(), app_secret=app_secret.strip(),
-                                   app_code=app_code.strip(), broker_id=broker_id.strip(),is_sandbox=True)
+                                   app_code=app_code.strip(), broker_id=broker_id.strip())
                     mkt_api = inv.MarketData(); rt_api = inv.RealtimeData()
                     test = mkt_api.get_candlestick("PTT", interval="1d", limit=5)
                     if test:
