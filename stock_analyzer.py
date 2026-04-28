@@ -737,17 +737,22 @@ def get_data(symbol, mkt_key):
 
     if use_live:
         try:
+            # ดึง historical สำหรับคำนวณ indicator (200 วัน)
             df = fetch_settrade(symbol)
+
+            # ดึงราคาล่าสุด แยกต่างหาก
             debug_log = []
             rt_price, rt_chg = _get_settrade_current_price(symbol, debug_log=debug_log)
             info["debug_log"] = debug_log
+
             if rt_price and rt_price > 0:
-                prev_close = float(df["close"].iloc[-1])
+                # เพิ่มแถววันนี้ (ถ้ายังไม่มี) หรือ patch แถวสุดท้าย
+                prev = float(df["close"].iloc[-1])
                 df.iloc[-1, df.columns.get_loc("close")] = rt_price
-                df.iloc[-1, df.columns.get_loc("high")] = max(float(df["high"].iloc[-1]), rt_price)
-                df.iloc[-1, df.columns.get_loc("low")]  = min(float(df["low"].iloc[-1]),  rt_price)
+                df.iloc[-1, df.columns.get_loc("high")]  = max(float(df["high"].iloc[-1]), rt_price)
+                df.iloc[-1, df.columns.get_loc("low")]   = min(float(df["low"].iloc[-1]),  rt_price)
                 info["rt_price"]   = rt_price
-                info["prev_close"] = prev_close
+                info["prev_close"] = prev
                 info["source"]     = "settrade_live"
             else:
                 info["source"] = "settrade_daily"
@@ -765,50 +770,6 @@ def get_data(symbol, mkt_key):
         except Exception:
             pass
 
-    df = fetch_mock(symbol)
-    info["source"] = "mock"
-    return df, info
-    info = {}
-    use_live = st.session_state.logged_in and mkt_key == "SET"
-
-    if use_live:
-        try:
-            # ดึง historical (รายวัน) สำหรับคำนวณ indicator
-            df = fetch_settrade(symbol)
-
-            # ดึงราคาปัจจุบัน real-time แล้ว patch แถวสุดท้าย
-            rt_price, rt_chg = _get_settrade_current_price(symbol)
-            if rt_price and rt_price > 0:
-                prev_close = float(df["close"].iloc[-1])
-                # อัปเดตแถวล่าสุดด้วยราคาปัจจุบัน
-                df.iloc[-1, df.columns.get_loc("close")] = rt_price
-                # ปรับ high/low ของวันให้ครอบคลุมราคา realtime
-                df.iloc[-1, df.columns.get_loc("high")] = max(
-                    float(df["high"].iloc[-1]), rt_price)
-                df.iloc[-1, df.columns.get_loc("low")] = min(
-                    float(df["low"].iloc[-1]), rt_price)
-                info["rt_price"]  = rt_price
-                info["prev_close"] = prev_close
-                info["source"] = "settrade_live"
-            else:
-                info["source"] = "settrade_daily"
-
-            return df, info
-        except Exception as e:
-            info["err"] = str(e)
-
-    # fallback: yfinance
-    yf_sym = symbol + ".BK" if mkt_key == "SET" else symbol
-    if YF_OK:
-        try:
-            df, yf_info = fetch_yfinance(yf_sym)
-            info["source"] = "yfinance"
-            info["yf"] = yf_info
-            return df, info
-        except Exception:
-            pass
-
-    # fallback: mock
     df = fetch_mock(symbol)
     info["source"] = "mock"
     return df, info
@@ -1109,124 +1070,108 @@ def render_ai_settings_sidebar():
 # RENDER AI ANALYSIS TAB
 # ---------------------------------------------------------------
 def render_ai_tab(sym, company_name, mkt_key, I, S):
-    sym_safe  = "".join(c for c in sym if c.isalnum())
-    prov_key  = "_ai_prov_"  + sym_safe   # provider per หุ้น
-    trig_key  = "_ai_trig_"  + sym_safe   # trigger วิเคราะห์
-    key_c     = "_saved_claude_key"
-    key_g     = "_saved_gemini_key"
+    sym_safe = "".join(c for c in sym if c.isalnum())
 
-    # init
-    if prov_key not in st.session_state:
-        st.session_state[prov_key] = "claude"
-    if trig_key not in st.session_state:
-        st.session_state[trig_key] = False
+    # ── State keys (ทั้งหมดต่อหุ้น ไม่มี global) ─────────────
+    K_PROV  = f"_ap_{sym_safe}"      # provider
+    K_TRIG  = f"_at_{sym_safe}"      # trigger วิเคราะห์
+    K_RPROV = f"_arp_{sym_safe}"     # provider ตอน run
+    K_RKEY  = f"_ark_{sym_safe}"     # api key ตอน run
+    K_CKC   = f"_ck_{sym_safe}_c"   # claude key input
+    K_CKG   = f"_ck_{sym_safe}_g"   # gemini key input
 
-    provider = st.session_state[prov_key]
+    for k, v in [(K_PROV,"claude"),(K_TRIG,False),(K_RPROV,"claude"),(K_RKEY,"")]:
+        if k not in st.session_state:
+            st.session_state[k] = v
 
-    # ── Provider buttons (ไม่ rerun เพราะอ่าน pick ในรอบเดียว) ─
+    provider = st.session_state[K_PROV]
+
+    # ── Provider toggle ───────────────────────────────────────
     col_c, col_g = st.columns(2)
     with col_c:
-        pick_c = st.button("🟠 Claude" + (" ✓" if provider=="claude" else ""),
-                           use_container_width=True,
-                           type="primary" if provider=="claude" else "secondary",
-                           key="aib_c_"+sym_safe)
+        if st.button("🟠 Claude" + (" ✓" if provider=="claude" else ""),
+                     use_container_width=True,
+                     type="primary" if provider=="claude" else "secondary",
+                     key=f"_btn_c_{sym_safe}"):
+            st.session_state[K_PROV] = "claude"
+            provider = "claude"
     with col_g:
-        pick_g = st.button("🔵 Gemini" + (" ✓" if provider=="gemini" else ""),
-                           use_container_width=True,
-                           type="primary" if provider=="gemini" else "secondary",
-                           key="aib_g_"+sym_safe)
-    if pick_c:
-        st.session_state[prov_key] = "claude"
-        provider = "claude"
-    if pick_g:
-        st.session_state[prov_key] = "gemini"
-        provider = "gemini"
+        if st.button("🔵 Gemini" + (" ✓" if provider=="gemini" else ""),
+                     use_container_width=True,
+                     type="primary" if provider=="gemini" else "secondary",
+                     key=f"_btn_g_{sym_safe}"):
+            st.session_state[K_PROV] = "gemini"
+            provider = "gemini"
 
-    # metadata
-    if provider == "claude":
-        plabel  = "Claude"
-        link    = "console.anthropic.com"
-        skey    = key_c
-    else:
-        plabel  = "Gemini 2.0 Flash"
-        link    = "aistudio.google.com"
-        skey    = key_g
-
-    # ── API Key input (ไม่ใช้ form — ใช้ on_change บันทึกทันที) ─
+    # ── API Key — แต่ละ provider ใช้ widget key แยกกัน ─────────
+    # render ทั้งคู่เสมอ ซ่อน label อันที่ไม่ใช้
+    # วิธีนี้ Streamlit track ค่าทั้งสองไว้ตลอด session
     st.markdown('<div class="sec-title">🔑 API Key</div>', unsafe_allow_html=True)
-
-    def _save_key():
-        val = st.session_state.get("ai_key_input_"+sym_safe, "").strip()
-        st.session_state[skey] = val
-
-    api_key_val = st.session_state.get(skey, "")
-    st.text_input(
-        f"{plabel} API Key",
+    claude_key = st.text_input(
+        "Claude API Key",
         type="password",
-        placeholder=("sk-ant-api03-...  ·  "+link if provider=="claude"
-                     else "AIza...  ·  "+link+" (ฟรี)"),
-        value=api_key_val,
-        key="ai_key_input_"+sym_safe,
-        on_change=_save_key,
-        label_visibility="visible",
-    )
-    # อ่านค่าปัจจุบันจาก widget
-    current_key = st.session_state.get("ai_key_input_"+sym_safe, "").strip()
-    if not current_key:
-        current_key = api_key_val
+        placeholder="sk-ant-api03-...  ·  console.anthropic.com",
+        key=K_CKC,
+        label_visibility="visible" if provider=="claude" else "collapsed",
+    ).strip()
+    gemini_key = st.text_input(
+        "Gemini API Key",
+        type="password",
+        placeholder="AIza...  ·  aistudio.google.com (ฟรี)",
+        key=K_CKG,
+        label_visibility="visible" if provider=="gemini" else "collapsed",
+    ).strip()
 
-    if not current_key:
+    api_key = claude_key if provider=="claude" else gemini_key
+    plabel  = "Claude" if provider=="claude" else "Gemini 2.0 Flash"
+    link    = "console.anthropic.com" if provider=="claude" else "aistudio.google.com"
+
+    if not api_key:
         st.caption(f"🔑 รับ API Key ฟรีที่ {link}")
 
-    # ── ปุ่มวิเคราะห์ (ปุ่มธรรมดา ไม่ใช้ form) ───────────────
-    if st.button(
-        f"🚀 วิเคราะห์ {sym} ด้วย {plabel}",
-        use_container_width=True,
-        disabled=not current_key,
-        key="ai_run_"+sym_safe,
-    ):
-        # บันทึก trigger + api key ลง session_state
-        st.session_state[trig_key] = True
-        st.session_state[skey] = current_key
-        st.session_state["_ai_run_prov_"+sym_safe] = provider
-        st.session_state["_ai_run_key_"+sym_safe]  = current_key
+    # ── ปุ่มวิเคราะห์ ─────────────────────────────────────────
+    if st.button(f"🚀 วิเคราะห์ {sym} ด้วย {plabel}",
+                 use_container_width=True,
+                 disabled=not api_key,
+                 key=f"_run_{sym_safe}"):
+        st.session_state[K_TRIG]  = True
+        st.session_state[K_RPROV] = provider
+        st.session_state[K_RKEY]  = api_key
 
-    # ── Cache ───────────────────────────────────────────────
+    # ── แสดง cache ────────────────────────────────────────────
     cache_key = f"{sym}_{mkt_key}_{provider}"
     cached    = st.session_state.ai_analysis_cache.get(cache_key)
 
     if cached:
         age = int((datetime.now()-cached["ts"]).total_seconds())
-        st.caption(f"📋 ผลล่าสุด ({plabel}) · {age//60} นาทีที่แล้ว")
+        st.caption(f"📋 {plabel} · {age//60} นาทีที่แล้ว")
         if cached.get("news"):
             with st.expander(f"📰 ข่าว ({len(cached['news'])} รายการ)", expanded=False):
                 for n in cached["news"]:
                     st.markdown(
-                        f'<div class="news-item">'
-                        f'<div class="news-title">{n["title"]}</div>'
-                        f'<div class="news-meta">{n["source"]}'
-                        +(f' · {n["date"]}' if n.get("date") else "")+
+                        f'<div class="news-item"><div class="news-title">{n["title"]}</div>' +
+                        f'<div class="news-meta">{n["source"]}' +
+                        (f' · {n["date"]}' if n.get("date") else "")+
                         '</div></div>', unsafe_allow_html=True)
         st.markdown('<div class="sec-title">🧠 ผลวิเคราะห์</div>', unsafe_allow_html=True)
         st.markdown(cached["text"])
-        c1,c2 = st.columns(2)
+        c1, c2 = st.columns(2)
         with c1:
-            if st.button("🔄 วิเคราะห์ใหม่", use_container_width=True, key="air_"+sym_safe):
+            if st.button("🔄 วิเคราะห์ใหม่", use_container_width=True, key=f"_ref_{sym_safe}"):
                 del st.session_state.ai_analysis_cache[cache_key]
                 st.rerun()
         with c2:
-            if st.button("🗑 ล้าง Cache", use_container_width=True, key="aic_"+sym_safe):
+            if st.button("🗑 ล้าง Cache", use_container_width=True, key=f"_clr_{sym_safe}"):
                 st.session_state.ai_analysis_cache = {}
                 st.rerun()
 
-    # ── Execute เมื่อ trigger ────────────────────────────────
-    # ใช้ trig_key แทน submitted เพราะ trig_key อยู่ใน session_state
-    # ไม่หายหลัง rerun
-    run_prov = st.session_state.get("_ai_run_prov_"+sym_safe, provider)
-    run_key  = st.session_state.get("_ai_run_key_"+sym_safe, "").strip()
-
-    if st.session_state.get(trig_key) and run_key and not cached:
-        st.session_state[trig_key] = False   # reset trigger
+    # ── Execute ───────────────────────────────────────────────
+    elif st.session_state.get(K_TRIG) and st.session_state.get(K_RKEY):
+        st.session_state[K_TRIG] = False
+        run_prov = st.session_state[K_RPROV]
+        run_key  = st.session_state[K_RKEY]
+        run_cache= f"{sym}_{mkt_key}_{run_prov}"
+        run_plabel = "Claude" if run_prov=="claude" else "Gemini 2.0 Flash"
 
         news_items = []
         with st.spinner(f"🌐 ค้นหาข่าว {sym}..."):
@@ -1237,25 +1182,26 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
                 context_text = (f"Technical: ราคา {I['price']:.2f} "
                                 f"RSI {I['rsi']:.1f} คะแนน {S['sc']}/100")
 
-        with st.spinner(f"🤖 {plabel} กำลังวิเคราะห์..."):
+        with st.spinner(f"🤖 {run_plabel} กำลังวิเคราะห์..."):
             try:
-                prompt = build_ai_prompt(sym, company_name, mkt_key, context_text)
-                run_cache_key = f"{sym}_{mkt_key}_{run_prov}"
-                result = (call_claude_api(prompt, run_key) if run_prov=="claude"
-                          else call_gemini_api(prompt, run_key))
-                st.session_state.ai_analysis_cache[run_cache_key] = {
+                prompt  = build_ai_prompt(sym, company_name, mkt_key, context_text)
+                result  = (call_claude_api(prompt, run_key) if run_prov=="claude"
+                           else call_gemini_api(prompt, run_key))
+                st.session_state.ai_analysis_cache[run_cache] = {
                     "ts": datetime.now(), "text": result, "news": news_items,
                 }
                 st.rerun()
             except Exception as e:
-                err = str(e)
-                hint = ("❌ API Key ไม่ถูกต้อง"  if "401" in err or "invalid_api_key" in err.lower()
-                        else "⏳ Rate limit"       if "429" in err
-                        else "💳 Quota หมด"       if "quota" in err.lower()
-                        else "⏱ Timeout"          if "timeout" in err.lower()
+                err  = str(e)
+                hint = ("❌ API Key ไม่ถูกต้อง"
+                        if "401" in err or "invalid_api_key" in err.lower() or "api_key" in err.lower()
+                        else "⏳ Rate limit — รอสักครู่" if "429" in err
+                        else "💳 Quota หมด"             if "quota" in err.lower()
+                        else "⏱ Timeout"                if "timeout" in err.lower()
                         else "🔌 เชื่อมต่อไม่ได้")
+                st.session_state[K_TRIG] = False
                 st.markdown(
-                    f'<div class="err-box"><strong>{hint}</strong><br>'
+                    f'<div class="err-box"><strong>{hint}</strong><br>' +
                     f'<span style="font-size:.73rem;opacity:.7;">{err[:400]}</span></div>',
                     unsafe_allow_html=True)
 
