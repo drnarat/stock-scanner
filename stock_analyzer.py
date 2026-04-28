@@ -306,20 +306,40 @@ MARKETS = {
         "flag": "TH", "name": "ตลาดหุ้นไทย", "desc": "SET50/100/mai",
         "currency": "฿", "tag": "tth",
         "stocks": [
+            # กลุ่มธนาคาร
             ("KBANK","กสิกรไทย"),("BBL","กรุงเทพ"),("SCB","ไทยพาณิชย์"),
             ("KTB","กรุงไทย"),("BAY","กรุงศรี"),("TISCO","ทิสโก้"),("KKP","เกียรตินาคิน"),
+            ("TMB","ทหารไทย"),("TCAP","ทุนธนชาต"),
+            # กลุ่มพลังงาน
             ("PTT","ปตท."),("PTTEP","ปตท.สผ."),("GULF","กัลฟ์"),("GPSC","โกลบอลเพาเวอร์"),
             ("RATCH","ราช กรุ๊ป"),("BGRIM","บี.กริม"),("EGCO","เอ็กโก"),
-            ("ADVANC","แอดวานซ์"),("TRUE","ทรู"),("MFEC","MFEC"),("BE8","บี8"),
+            ("BCP","บางจาก"),("TOP","ไทยออยล์"),("IRPC","IRPC"),
+            # กลุ่มสื่อสาร
+            ("ADVANC","แอดวานซ์"),("DTAC","ดีแทค"),("TRUE","ทรู"),
+            ("INTUCH","อินทัช"),("JASIF","จัสมิน"),
+            # กลุ่มค้าปลีก
             ("CPALL","ซีพีออลล์"),("CRC","เซ็นทรัล รีเทล"),("HMPRO","โฮมโปร"),
-            ("MAKRO","แม็คโคร"),("BJC","บีเจซี"),
-            ("CPF","ซีพีเอฟ"),("TU","ไทยยูเนี่ยน"),("GFPT","จีเอฟพีที"),("BTG","บีทาเก้น"),
-            ("LH","แลนด์แอนด์เฮาส์"),("AP","เอพี"),("SIRI","แสนสิริ"),("QH","ควอลิตี้เฮ้าส์"),
-            ("AOT","ท่าอากาศยาน"),("AAV","เอเชีย เอวิเอชั่น"),("CENTEL","เซ็นทารา"),
-            ("MINT","ไมเนอร์"),("ERW","อีอาร์ดับบิ้ว"),
+            ("MAKRO","แม็คโคร"),("BJC","บีเจซี"),("COM7","คอม7"),
+            # กลุ่มอาหาร
+            ("CPF","ซีพีเอฟ"),("TU","ไทยยูเนี่ยน"),("GFPT","จีเอฟพีที"),
+            ("BTG","บีทาเก้น"),("OSP","โอสถสภา"),
+            # กลุ่มอสังหาริมทรัพย์
+            ("LH","แลนด์แอนด์เฮาส์"),("AP","เอพี"),("SIRI","แสนสิริ"),
+            ("QH","ควอลิตี้เฮ้าส์"),("SC","เอสซี แอสเสท"),("SPALI","ศุภาลัย"),
+            # กลุ่มท่องเที่ยว/สายการบิน
+            ("AOT","ท่าอากาศยาน"),("AAV","เอเชีย เอวิเอชั่น"),
+            ("CENTEL","เซ็นทารา"),("MINT","ไมเนอร์"),("ERW","อีอาร์ดับบิ้ว"),
+            # กลุ่มสุขภาพ
             ("BDMS","กรุงเทพดุสิต"),("BGH","กรุงเทพ"),("BCH","บางกอก"),
-            ("SCC","ปูนซิเมนต์ไทย"),("PTTGC","พีทีที โกลบอล"),("IRPC","IRPC"),
-            ("MTC","เมืองไทย แคปปิตอล"),("TIDLOR","ไทยเดินทาง"),("SAWAD","ศาวะดี"),
+            ("CHG","ชัยพัฒนา"),("RJH","รามาธิบดี"),
+            # กลุ่มวัสดุก่อสร้าง/อุตสาหกรรม
+            ("SCC","ปูนซิเมนต์ไทย"),("PTTGC","พีทีที โกลบอล"),
+            ("SCCC","ซิเมนต์ไทย"),("TPIPL","TPI โพลีน"),
+            # กลุ่มการเงิน (non-bank)
+            ("MTC","เมืองไทย แคปปิตอล"),("TIDLOR","ไทยเดินทาง"),
+            ("SAWAD","ศาวะดี"),("AEONTS","อิออน"),
+            # กลุ่ม tech/growth
+            ("MFEC","MFEC"),("BE8","บี8"),("BBIK","บีบิก"),
         ],
     },
     "US": {
@@ -613,15 +633,7 @@ def _parse_price_from_row(row):
 
 
 def _get_settrade_current_price(symbol, debug_log=None):
-    """
-    ดึงราคาปัจจุบันจาก settrade-v2
-    คืน (price, chg_pct) หรือ (None, None)
-
-    Strategy:
-    1. ลอง quote methods ทุกชนิด
-    2. ดึง candlestick รายวัน limit=1 → ถ้าเป็นวันนี้ = ราคา close ปัจจุบัน
-    3. ลอง intraday ทุก interval format ที่ settrade รองรับ
-    """
+    """ดึงราคาปัจจุบันจาก settrade-v2, คืน (price, chg%) หรือ (None, None)"""
     api = st.session_state.market_api
     rt  = st.session_state.realtime_api
 
@@ -629,85 +641,53 @@ def _get_settrade_current_price(symbol, debug_log=None):
         if debug_log is not None:
             debug_log.append(msg)
 
-    # ── 1. Quote/Security methods (ถ้ามี) ───────────────────
+    # ── 1. Quote methods ─────────────────────────────────────
     for label, obj in [("rt", rt), ("api", api)]:
         if obj is None:
             continue
-        for method in ["get_quote_symbol", "get_quote", "quote",
-                       "get_security_info", "get_price_info",
-                       "get_stock_info", "get_market_data"]:
+        for method in ["get_quote_symbol","get_quote","quote",
+                       "get_security_info","get_price_info",
+                       "get_stock_info","get_last_price","get_ticker"]:
             if not hasattr(obj, method):
                 continue
             try:
                 q = getattr(obj, method)(symbol)
-                log(f"✓ {label}.{method} → {str(q)[:150]}")
-                # dict
+                log(f"✓ {label}.{method} → {str(q)[:120]}")
                 if isinstance(q, dict):
                     p = _parse_price_from_row(q)
                     if p:
                         chg = float(q.get("change_percent") or q.get("pctChange") or
                                     q.get("changepercent") or q.get("change_pct") or 0)
-                        log(f"  → price={p} chg={chg}")
                         return p, chg
-                # list → เอาแถวล่าสุด
                 elif isinstance(q, list) and q:
                     row = q[-1] if isinstance(q[-1], dict) else {}
                     p = _parse_price_from_row(row)
                     if p:
-                        log(f"  → price={p} (from list)")
                         return p, None
             except Exception as e:
-                log(f"✗ {label}.{method} → {e}")
+                log(f"✗ {label}.{method} → {str(e)[:60]}")
 
-    # ── 2. Intraday candlestick — ใช้ limit=1 เอาแท่งล่าสุด ──
-    # settrade-v2 รองรับ interval: 1, 5, 15, 30, 60 (นาที) และ D
-    for interval in ["1", "5", "15", "30", "60", "1m", "5m", "15m"]:
+    # ── 2. Candlestick intraday — ลอง interval ทุก format ───
+    # settrade-v2 จริงๆ ใช้ "1","5","15","30","60" (ไม่มี m ต่อท้าย)
+    for iv in ["1","5","15","30","60","1m","5m","15m","D","1d","day"]:
         try:
-            raw = api.get_candlestick(symbol, interval=interval, limit=1)
+            raw = api.get_candlestick(symbol, interval=iv, limit=2)
             if not raw:
                 continue
-            df_i = pd.DataFrame(raw if isinstance(raw, list) else [raw])
-            log(f"✓ candle interval={interval} cols={list(df_i.columns)} rows={len(df_i)}")
-            p = _parse_price_from_row(df_i.iloc[-1].to_dict())
-            if p:
-                log(f"  → intraday price={p}")
-                return p, None
-        except Exception as e:
-            log(f"✗ candle interval={interval} → {e}")
-
-    # ── 3. Daily limit=1 เช็ควันที่ ─────────────────────────
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    last_resort_price = None
-    for iv in ["1d","D","day","1D"]:
-        try:
-            raw = api.get_candlestick(symbol, interval=iv, limit=1)
-            if not raw:
-                continue
-            row = (raw[-1] if isinstance(raw, list) else raw)
+            rows = raw if isinstance(raw, list) else [raw]
+            row  = rows[-1]
             if not isinstance(row, dict):
-                row = pd.DataFrame(raw).iloc[-1].to_dict()
-            log(f"✓ daily iv={iv} row_keys={list(row.keys())[:10]}")
-            date_val = str(row.get("date","") or row.get("time","") or
-                           row.get("datetime","") or row.get("t","") or
-                           row.get("Date","") or "")
+                row = pd.DataFrame([row]).iloc[0].to_dict()
+            log(f"✓ iv={iv} keys={list(row.keys())[:6]}")
             p = _parse_price_from_row(row)
             if p:
-                last_resort_price = p   # เก็บไว้
-                if today_str[:7] in date_val:   # เช็คแค่ ปี-เดือน (loose match)
-                    log(f"  → is_today price={p}")
-                    return p, None
-            break
+                log(f"  → price={p}")
+                return p, None
         except Exception as e:
-            log(f"✗ daily iv={iv} → {e}")
+            log(f"✗ iv={iv} → {str(e)[:50]}")
 
-    # ถ้าไม่มีวิธีอื่น คืน daily ล่าสุดไปก่อน (ดีกว่า None)
-    if last_resort_price:
-        log(f"⚠ fallback to last daily price={last_resort_price}")
-        return last_resort_price, None
-
-    log("⚠ ดึงราคาไม่ได้เลย")
+    log("⚠ ดึงราคาปัจจุบันไม่ได้")
     return None, None
-
 
 def fetch_settrade(symbol, limit=200):
     raw = st.session_state.market_api.get_candlestick(symbol, interval="1d", limit=limit)
