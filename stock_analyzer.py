@@ -939,144 +939,153 @@ def render_ai_settings_sidebar():
 # RENDER AI ANALYSIS TAB
 # ---------------------------------------------------------------
 def render_ai_tab(sym, company_name, mkt_key, I, S):
-    """แสดง tab AI Analysis ใน render_deep"""
+    """แสดง tab AI Analysis — provider/key เห็นตลอด, cache แสดงด้านล่าง"""
 
-    # อ่านจาก _store keys (ไม่ใช่ widget keys โดยตรง)
-    provider   = st.session_state.get("ai_provider", "claude")
-    claude_key = st.session_state.get("_claude_key_store", "").strip()
-    gemini_key = st.session_state.get("_gemini_key_store", "").strip()
-    cache_key  = f"{sym}_{mkt_key}_{provider}"
-    cached     = st.session_state.ai_analysis_cache.get(cache_key)
+    # safe key suffix — ตัด อักขระพิเศษออก
+    sym_safe = "".join(c for c in sym if c.isalnum())
 
-    # ── Provider selector ────────────────────────────────────
-    st.markdown('<div class="sec-title">🤖 AI วิเคราะห์เจาะลึก</div>', unsafe_allow_html=True)
+    # ── 1. Provider Selector (เห็นเสมอ) ─────────────────────
+    st.markdown('<div class="sec-title">🤖 เลือก AI</div>', unsafe_allow_html=True)
+    provider = st.session_state.get("ai_provider", "claude")
+
     col_p1, col_p2 = st.columns(2)
     with col_p1:
-        is_claude = provider == "claude"
-        if st.button(
-            "🟠 Claude" + (" ✓" if is_claude else ""),
-            use_container_width=True,
-            type="primary" if is_claude else "secondary",
-            key="ai_sel_claude_" + sym,
-        ):
-            st.session_state.ai_provider = "claude"
+        btn_claude_style = "primary" if provider == "claude" else "secondary"
+        if st.button("🟠 Claude (Anthropic)", use_container_width=True,
+                     type=btn_claude_style, key="aip_claude_" + sym_safe):
+            st.session_state["ai_provider"] = "claude"
             st.rerun()
     with col_p2:
-        is_gemini = provider == "gemini"
-        if st.button(
-            "🔵 Gemini" + (" ✓" if is_gemini else ""),
-            use_container_width=True,
-            type="primary" if is_gemini else "secondary",
-            key="ai_sel_gemini_" + sym,
-        ):
-            st.session_state.ai_provider = "gemini"
+        btn_gemini_style = "primary" if provider == "gemini" else "secondary"
+        if st.button("🔵 Gemini (Google)", use_container_width=True,
+                     type=btn_gemini_style, key="aip_gemini_" + sym_safe):
+            st.session_state["ai_provider"] = "gemini"
             st.rerun()
 
-    # ── API Key input inline — widget key ไม่ชนกับ sidebar หรือ _store ──
+    # ── 2. API Key input (เห็นเสมอ) ─────────────────────────
     st.markdown('<div class="sec-title">🔑 API Key</div>', unsafe_allow_html=True)
 
     if provider == "claude":
-        # on_change เขียนลง _store แทนการ assign โดยตรง
-        def _save_claude_inline():
-            st.session_state["_claude_key_store"] = st.session_state["inline_claude_" + sym]
-
-        st.text_input(
+        stored_key = st.session_state.get("_claude_key_store", "")
+        new_key = st.text_input(
             "Claude API Key",
-            value=claude_key,
+            value=stored_key,
             type="password",
-            placeholder="sk-ant-api03-... (รับที่ console.anthropic.com)",
-            key="inline_claude_" + sym,
-            on_change=_save_claude_inline,
+            placeholder="sk-ant-api03-...  |  รับฟรีที่ console.anthropic.com",
+            key="aikey_claude_" + sym_safe,
         )
-        # อ่านค่า fresh หลัง widget render (อาจ user เพิ่งพิมพ์ใน widget นี้)
-        api_key        = st.session_state.get("inline_claude_" + sym, claude_key).strip()
+        # sync กลับ store ทุกครั้งที่ render (ค่าจาก widget ล่าสุด)
+        if new_key != stored_key:
+            st.session_state["_claude_key_store"] = new_key
+        api_key = new_key.strip()
         provider_label = "Claude Opus"
-        badge_cls      = "ai-claude"
-    else:
-        def _save_gemini_inline():
-            st.session_state["_gemini_key_store"] = st.session_state["inline_gemini_" + sym]
+        badge_cls = "ai-claude"
+        key_link = "console.anthropic.com"
+        key_color = "#d4896a"
 
-        st.text_input(
+    else:  # gemini
+        stored_key = st.session_state.get("_gemini_key_store", "")
+        new_key = st.text_input(
             "Gemini API Key",
-            value=gemini_key,
+            value=stored_key,
             type="password",
-            placeholder="AIza... (รับที่ aistudio.google.com — ฟรี)",
-            key="inline_gemini_" + sym,
-            on_change=_save_gemini_inline,
+            placeholder="AIza...  |  รับฟรีที่ aistudio.google.com",
+            key="aikey_gemini_" + sym_safe,
         )
-        api_key        = st.session_state.get("inline_gemini_" + sym, gemini_key).strip()
+        if new_key != stored_key:
+            st.session_state["_gemini_key_store"] = new_key
+        api_key = new_key.strip()
         provider_label = "Gemini 2.0 Flash"
-        badge_cls      = "ai-gemini"
+        badge_cls = "ai-gemini"
+        key_link = "aistudio.google.com  (ฟรี! ไม่ต้องใส่บัตรเครดิต)"
+        key_color = "#6fa8f5"
 
-    has_key = bool(api_key)
+    if not api_key:
+        st.markdown(
+            f'<div class="warn-box" style="margin-top:6px;">'
+            f'🔑 ยังไม่ได้ใส่ API Key · รับได้ฟรีที่ '
+            f'<strong style="color:{key_color};">{key_link}</strong>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
 
-    # ── Cached result ─────────────────────────────────────────
+    # ── 3. Cache check ────────────────────────────────────────
+    cache_key = f"{sym}_{mkt_key}_{provider}"
+    cached = st.session_state.ai_analysis_cache.get(cache_key)
+
     if cached:
-        age_min = (datetime.now() - cached["ts"]).seconds // 60
+        # แสดงผลเก่า + ปุ่ม refresh และวิเคราะห์ใหม่
+        age_sec = (datetime.now() - cached["ts"]).seconds
+        age_str = f"{age_sec // 60} นาที" if age_sec >= 60 else f"{age_sec} วินาที"
+
         st.markdown(
-            f'<div style="font-size:.7rem;color:var(--txt3);margin-bottom:8px;">'
-            f'📋 ผลวิเคราะห์ล่าสุด · <span class="ai-badge {badge_cls}">{provider_label}</span>'
-            f' · {age_min} นาทีที่แล้ว</div>',
+            f'<div style="display:flex;justify-content:space-between;align-items:center;'
+            f'margin:10px 0 6px;flex-wrap:wrap;gap:6px;">'
+            f'<span style="font-size:.72rem;color:var(--txt3);">'
+            f'📋 ผลล่าสุด · <span class="ai-badge {badge_cls}">{provider_label}</span>'
+            f' · {age_str}ที่แล้ว</span>'
+            f'</div>',
             unsafe_allow_html=True
         )
-        # แสดงข่าว
+
+        # ข่าวที่ใช้
         if cached.get("news"):
-            st.markdown('<div class="sec-title">📰 ข่าวที่ใช้วิเคราะห์</div>', unsafe_allow_html=True)
-            for n in cached["news"][:6]:
-                src_color = "#d4896a" if "google" in n["source"].lower() else "#6fa8f5"
-                st.markdown(
-                    f'<div class="news-item">'
-                    f'<div class="news-title">{n["title"]}</div>'
-                    f'<div class="news-meta"><span class="news-src" style="color:{src_color};">{n["source"]}</span>'
-                    + (f' · {n["date"]}' if n["date"] else '') + '</div>'
-                    '</div>',
-                    unsafe_allow_html=True
-                )
-        # แสดงผล AI
-        st.markdown('<div class="sec-title">🧠 ผลวิเคราะห์จาก AI</div>', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="ai-panel"><div class="ai-result">' +
-            cached["text"].replace("\n", "<br>").replace("### ", "<h3>").replace("\n", "</h3>", 1) +
-            '</div></div>',
-            unsafe_allow_html=True
-        )
+            with st.expander(f"📰 ข่าวที่ใช้วิเคราะห์ ({len(cached['news'])} รายการ)", expanded=False):
+                for n in cached["news"]:
+                    src_c = key_color
+                    st.markdown(
+                        f'<div class="news-item">'
+                        f'<div class="news-title">{n["title"]}</div>'
+                        f'<div class="news-meta">'
+                        f'<span class="news-src" style="color:{src_c};">{n["source"]}</span>'
+                        + (f' · {n["date"]}' if n.get("date") else "")
+                        + f'</div></div>',
+                        unsafe_allow_html=True
+                    )
+
+        # ผลวิเคราะห์
+        st.markdown('<div class="sec-title">🧠 ผลวิเคราะห์</div>', unsafe_allow_html=True)
+        # render markdown จาก AI เป็น st.markdown ธรรมดา (support bold, list ฯลฯ)
+        st.markdown(cached["text"])
+
         col_r1, col_r2 = st.columns(2)
         with col_r1:
-            if st.button("🔄 วิเคราะห์ใหม่", use_container_width=True, key="ai_refresh_" + sym):
+            if st.button("🔄 วิเคราะห์ใหม่", use_container_width=True,
+                         key="ai_refresh_" + sym_safe, disabled=not api_key):
                 del st.session_state.ai_analysis_cache[cache_key]
+                st.rerun()
+        with col_r2:
+            if st.button("🗑 ล้าง Cache ทั้งหมด", use_container_width=True,
+                         key="ai_clear_" + sym_safe):
+                st.session_state.ai_analysis_cache = {}
                 st.rerun()
         return
 
-    # ── No cache — show analyze button ───────────────────────
-    if not has_key:
-        st.markdown(
-            '<div class="warn-box">'
-            '🔑 กรุณาใส่ API Key ด้านบนก่อนวิเคราะห์<br>'
-            + ('Claude: <strong>console.anthropic.com</strong>' if provider == "claude"
-               else 'Gemini: <strong>aistudio.google.com</strong> (ฟรี!)')
-            + '</div>',
-            unsafe_allow_html=True
-        )
-        return
-
+    # ── 4. ปุ่มวิเคราะห์ (ยังไม่มี cache) ───────────────────
     st.markdown(
-        '<div class="info-box">'
-        '🌐 ระบบจะ: ค้นหาข่าวล่าสุดจากอินเทอร์เน็ต → ส่งให้ AI วิเคราะห์รวมกับ Technical Indicators'
+        '<div class="info-box" style="margin-top:10px;">'
+        '🌐 ระบบจะค้นหาข่าว 1 เดือนล่าสุดจากอินเทอร์เน็ต แล้วให้ AI วิเคราะห์ร่วมกับ Technical Indicators'
         '</div>',
         unsafe_allow_html=True
     )
 
+    run_disabled = not api_key
     if st.button(
         f"🚀 วิเคราะห์ {sym} ด้วย {provider_label}",
         use_container_width=True,
-        key="ai_run_" + sym + "_" + provider,
+        disabled=run_disabled,
+        key="ai_run_" + sym_safe + "_" + provider,
     ):
+        news_items = []
         with st.spinner(f"🌐 กำลังค้นหาข่าว {sym}..."):
             try:
-                context_text, news_items = fetch_stock_context_text(sym, company_name, mkt_key, I, S, mkt_key)
-            except Exception as e:
-                context_text = f"ข้อมูล Technical: ราคา {I['price']:.2f} RSI {I['rsi']:.1f} คะแนน {S['sc']}/100"
-                news_items = []
+                context_text, news_items = fetch_stock_context_text(
+                    sym, company_name, mkt_key, I, S, mkt_key)
+            except Exception:
+                context_text = (
+                    f"Technical: ราคา {I['price']:.2f} "
+                    f"RSI {I['rsi']:.1f} คะแนน {S['sc']}/100"
+                )
 
         with st.spinner(f"🤖 {provider_label} กำลังวิเคราะห์..."):
             try:
@@ -1092,19 +1101,24 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
                     "news": news_items,
                 }
                 st.rerun()
+
             except Exception as e:
                 err = str(e)
-                if "401" in err or "invalid" in err.lower():
-                    hint = "❌ API Key ไม่ถูกต้อง กรุณาตรวจสอบ"
-                elif "429" in err:
+                if "401" in err or "unauthorized" in err.lower() or "invalid_api_key" in err.lower():
+                    hint = "❌ API Key ไม่ถูกต้อง — ตรวจสอบและลองใหม่"
+                elif "429" in err or "rate" in err.lower():
                     hint = "⏳ Rate limit — รอสักครู่แล้วลองใหม่"
-                elif "quota" in err.lower():
-                    hint = "💳 Quota หมด กรุณาตรวจสอบ billing"
+                elif "quota" in err.lower() or "billing" in err.lower():
+                    hint = "💳 Quota หมด — ตรวจสอบ billing ใน dashboard"
+                elif "timeout" in err.lower() or "timed out" in err.lower():
+                    hint = "⏱ Timeout — เครือข่ายช้า ลองใหม่อีกครั้ง"
                 else:
-                    hint = "🔌 เชื่อมต่อไม่ได้ — ตรวจสอบ internet / API key"
+                    hint = "🔌 เชื่อมต่อไม่ได้ — ตรวจสอบ internet และ API key"
                 st.markdown(
-                    f'<div class="err-box"><strong>{hint}</strong><br>'
-                    f'<span style="font-size:.75rem;opacity:.7;">{err[:200]}</span></div>',
+                    f'<div class="err-box">'
+                    f'<strong>{hint}</strong><br>'
+                    f'<span style="font-size:.73rem;opacity:.7;">{err[:300]}</span>'
+                    f'</div>',
                     unsafe_allow_html=True
                 )
 
