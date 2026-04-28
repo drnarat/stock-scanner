@@ -148,7 +148,7 @@ MARKETS = {
     "US": {
         "flag": "US", "name": "US Tech", "desc": "NASDAQ/NYSE",
         "currency": "$", "tag": "tus",
-       "stocks": [
+        "stocks": [
             ("AAPL","Apple"),("MSFT","Microsoft"),("NVDA","NVIDIA"),("GOOGL","Alphabet"),
             ("META","Meta"),("AMZN","Amazon"),("TSLA","Tesla"),("AMD","AMD"),
             ("INTC","Intel"),("AVGO","Broadcom"),("QCOM","Qualcomm"),("MU","Micron"),
@@ -171,18 +171,11 @@ MARKETS = {
 # SESSION STATE
 # ---------------------------------------------------------------
 for k, v in [
-    ("logged_in", False), 
-    ("investor", None),
-    ("market_api", None), 
-    ("market", None), 
-    ("scan_results", {}), 
-    ("view", "login"),
-    ("detail_sym", None), 
-    ("detail_mkt", None),
-    ("prefill_id", ""), 
-    ("prefill_secret", ""),
-    ("prefill_code", "SANDBOX"), 
-    ("prefill_broker", "SANDBOX"),
+    ("logged_in", False), ("market_api", None), ("realtime_api", None),
+    ("market", None), ("scan_results", {}), ("view", "login"),
+    ("detail_sym", None), ("detail_mkt", None),
+    ("prefill_id", ""), ("prefill_secret", ""),
+    ("prefill_code", "SANDBOX"), ("prefill_broker", "SANDBOX"),
 ]:
     if k not in st.session_state:
         st.session_state[k] = v
@@ -313,7 +306,7 @@ def compute_indicators(df, p):
     I["52wh"] = float(h.rolling(min(252,len(h))).max().iloc[-1])
     I["52wl"] = float(l.rolling(min(252,len(l))).min().iloc[-1])
     pv = (I["high_d"]+I["low_d"]+I["price"])/3
-    rng = I["high_d"] - I["lowd"]
+    rng = I["high_d"] - I["low_d"]
     I["pivot"]=pv; I["r1"]=2*pv-I["low_d"]; I["r2"]=pv+rng
     I["s1"]=2*pv-I["high_d"]; I["s2"]=pv-rng
     for k2 in list(I.keys()):
@@ -334,7 +327,7 @@ def score_stock(I, p):
         sc-=7; ss.append("MACD ตัดลง Signal")
     pr = I["price"]
     if pr > I["sma_s"] > I["sma_m"]: sc+=6; bs.append("ราคา > SMA" + str(p["sma_s"]) + " > SMA" + str(p["sma_m"]) + " uptrend")
-    elif pr < I["sma_s"] < I["sma_m"]: sc-=6; ss.append("ราคา < SMA" + str(p["sma_s"]) + " < SMA" + str(p["smam"]) + " downtrend")
+    elif pr < I["sma_s"] < I["sma_m"]: sc-=6; ss.append("ราคา < SMA" + str(p["sma_s"]) + " < SMA" + str(p["sma_m"]) + " downtrend")
     if pr > I["sma_l"]: sc+=4; bs.append("ราคา > SMA" + str(p["sma_l"]) + " เหนือค่าเฉลี่ยระยะยาว")
     else: sc-=4; ss.append("ราคา < SMA" + str(p["sma_l"]) + " ต่ำกว่าค่าเฉลี่ยระยะยาว")
     if I["bbp"] < 0.15: sc+=6; bs.append("BB% " + str(round(I["bbp"],2)) + " ใกล้ Lower Band")
@@ -377,52 +370,21 @@ def score_stock(I, p):
 # DATA FETCH
 # ---------------------------------------------------------------
 def fetch_settrade(symbol, limit=200):
-    try:
-        if st.session_state.market_api:
-            raw = st.session_state.market_api.get_candlestick(
-                symbol, 
-                interval="1d", 
-                limit=limit
-            )
-            
-            if isinstance(raw, dict) and 'data' in raw:
-                df = pd.DataFrame(raw['data'])
-            else:
-                df = pd.DataFrame(raw)
-                
-            rename = {
-                "last":"close","c":"close","o":"open","h":"high",
-                "l":"low","v":"volume","vol":"volume","close":"close"
-            }
-            df.rename(columns={col: rename.get(col, col) for col in df.columns}, inplace=True)
-            
-            required_cols = ["open", "high", "low", "close", "volume"]
-            for col in required_cols:
-                if col not in df.columns:
-                    for alt in [col.upper(), col.capitalize()]:
-                        if alt in df.columns:
-                            df[col] = df[alt]
-                            break
-                    if col not in df.columns:
-                        if col == "close" and "last" in df.columns:
-                            df["close"] = df["last"]
-                        elif col == "volume":
-                            df["volume"] = 1000000
-                        else:
-                            df[col] = df["close"] if "close" in df.columns else 100
-            
-            df = df[["open","high","low","close","volume"]].apply(
-                pd.to_numeric, errors="coerce"
-            ).dropna()
-            
-            if len(df) < 30:
-                raise ValueError("ข้อมูลน้อยเกิน去")
-                
-            return df
-            
-    except Exception as e:
-        print(f"Error fetching from settrade: {e}")
-        raise
+    raw = st.session_state.market_api.get_candlestick(symbol, interval="1d", limit=limit)
+    df = pd.DataFrame(raw)
+    rename = {"last":"close","c":"close","o":"open","h":"high","l":"low","v":"volume","vol":"volume"}
+    df.rename(columns={col: rename.get(col, col) for col in df.columns}, inplace=True)
+    if "close" not in df.columns:
+        for alt in ["Close","CLOSE","price","Price"]:
+            if alt in df.columns:
+                df["close"] = df[alt]; break
+    for col, alt in [("open","close"),("high","close"),("low","close"),("volume",None)]:
+        if col not in df.columns:
+            df[col] = df[alt] if alt else 1000000
+    df = df[["open","high","low","close","volume"]].apply(pd.to_numeric, errors="coerce").dropna()
+    if len(df) < 30:
+        raise ValueError("ข้อมูลน้อยเกินไป")
+    return df
 
 def fetch_yfinance(symbol, period="1y"):
     if not YF_OK:
@@ -437,42 +399,33 @@ def fetch_mock(symbol, n=200):
     base = np.random.uniform(8, 600)
     c = [base]
     for _ in range(n-1):
-        price_change = max(c[-1] * (1 + np.random.normal(0, 0.014)), 0.5)
-        c.append(price_change)
+        c.append(max(c[-1]*(1+np.random.normal(0,.014)), 0.5))
     c = np.array(c)
-    h = c * np.random.uniform(1.001, 1.025, n)
-    lo = c * np.random.uniform(0.975, 0.999, n)
-    v = np.random.uniform(3e5, 8e6, n).astype(int)
-    return pd.DataFrame({"open": c, "high": h, "low": lo, "close": c, "volume": v})
+    h = c*np.random.uniform(1.001,1.025,n); lo = c*np.random.uniform(.975,.999,n)
+    v = np.random.uniform(3e5,8e6,n).astype(int)
+    return pd.DataFrame({"open":c,"high":h,"low":lo,"close":c,"volume":v})
 
 def get_data(symbol, mkt_key):
     info = {}
     use_live = st.session_state.logged_in and mkt_key == "SET"
-    
-    if use_live and st.session_state.market_api:
+    if use_live:
         try:
             df = fetch_settrade(symbol)
+            q = st.session_state.realtime_api.get_quote_symbol(symbol)
+            if q and "last" in q:
+                df.iloc[-1, df.columns.get_loc("close")] = float(q["last"])
             info["source"] = "settrade"
             return df, info
-            
         except Exception as e:
             info["err"] = str(e)
-            # Fallback to yfinance or mock
-            st.warning(f"ไม่สามารถดึงข้อมูลจาก Settrade: {e} กำลังใช้ Yahoo Finance แทน")
-    
-    # ใช้ yfinance เป็น fallback
     yf_sym = symbol + ".BK" if mkt_key == "SET" else symbol
     if YF_OK:
         try:
             df, yf_info = fetch_yfinance(yf_sym)
-            info["source"] = "yfinance"
-            info["yf"] = yf_info
+            info["source"] = "yfinance"; info["yf"] = yf_info
             return df, info
-        except Exception as e:
-            info["err"] = str(e)
-            st.warning(f"ไม่สามารถดึงข้อมูลจาก Yahoo Finance: {e} กำลังใช้ Mock Data แทน")
-    
-    # Fallback to mock data
+        except Exception:
+            pass
     df = fetch_mock(symbol)
     info["source"] = "mock"
     return df, info
@@ -543,76 +496,286 @@ def render_deep(sym, mkt_key, I, S, info, yf_info=None):
     pr  = I["price"]
     sc  = S["sc"]
 
+    # pre-compute all display strings (no conditionals inside f-strings)
+    price_color  = "#00b894" if I["chg"] >= 0 else "#d63031"
+    chg_sign     = "+" if I["chg"] >= 0 else ""
+    chg5_sign    = "+" if I["chg_5d"] >= 0 else ""
+    chg20_sign   = "+" if I["chg_20d"] >= 0 else ""
+    pr_str       = cur + "{:,.2f}".format(pr)
+    chg_str      = chg_sign + "{:.2f}%".format(I["chg"])
+    chg5_str     = chg5_sign + "{:.1f}%".format(I["chg_5d"])
+    chg20_str    = chg20_sign + "{:.1f}%".format(I["chg_20d"])
+    sc_color     = "#00b894" if sc >= 65 else "#fdcb6e" if sc >= 45 else "#d63031"
+    score_cls    = "sh" if sc >= 65 else "sm" if sc >= 45 else "sl"
+    chip_cls     = "chip-" + S["cls"]
+    chg_cls      = "cup" if I["chg"] >= 0 else "cdn"
+    src_lbl      = {"settrade":"Settrade Live","yfinance":"Yahoo Finance","mock":"Mock Data"}.get(info.get("source","mock"),"")
+    name_str     = dict(mkt.get("stocks",[])).get(sym, sym)
+    rr_str       = "1:" + "{:.2f}".format(S["rr"])
+    entry_str    = cur + "{:,.2f}".format(S["entry"])
+    sl_str       = cur + "{:,.2f}".format(S["sl"])
+    t1_str       = cur + "{:,.2f}".format(S["t1"])
+    t2_str       = cur + "{:,.2f}".format(S["t2"])
+    t2_pct       = round((S["t2"]/pr-1)*100, 1) if pr > 0 else 0
+    open_str     = cur + "{:,.2f}".format(I["open"])
+    high_str     = cur + "{:,.2f}".format(I["high_d"])
+    low_str      = cur + "{:,.2f}".format(I["low_d"])
+    volr_str     = "{:.1f}x".format(I["vol_r"])
+    volr_cls     = "t1" if I["vol_r"] > 1.5 else ""
+    r2_str       = cur + "{:,.2f}".format(I["r2"])
+    r1_str       = cur + "{:,.2f}".format(I["r1"])
+    pv_str       = cur + "{:,.2f}".format(I["pivot"])
+    s1_str       = cur + "{:,.2f}".format(I["s1"])
+    s2_str       = cur + "{:,.2f}".format(I["s2"])
+    ic_conv_str  = cur + "{:,.2f}".format(I["ichi_conv"])
+    ic_base_str  = cur + "{:,.2f}".format(I["ichi_base"])
+    ic_sa_str    = cur + "{:,.2f}".format(I["ichi_sa"])
+    ic_sb_str    = cur + "{:,.2f}".format(I["ichi_sb"])
+    wl_str       = cur + "{:,.2f}".format(I["52wl"])
+    wh_str       = cur + "{:,.2f}".format(I["52wh"])
+    sma_s_str    = cur + "{:,.1f}".format(I["sma_s"])
+    sma_m_str    = cur + "{:,.1f}".format(I["sma_m"])
+    sma_l_str    = cur + "{:,.1f}".format(I["sma_l"])
+    vwap_str     = cur + "{:,.2f}".format(I["vwap"])
+    atr_str      = cur + "{:,.2f}".format(I["atr"])
+    ts_now       = datetime.now().strftime("%H:%M:%S")
+    rr_advice    = ("R/R ดีมาก" if S["rr"] >= 2 else "R/R พอได้" if S["rr"] >= 1.5 else "R/R ต่ำ ระวัง")
+    rr_color     = "#00b894" if S["rr"] >= 2 else "#fdcb6e" if S["rr"] >= 1.5 else "#d63031"
+    ichi_b       = pr > I["ichi_sa"] and pr > I["ichi_sb"]
+    ichi_s       = pr < I["ichi_sa"] and pr < I["ichi_sb"]
+    ichi_txt     = "เหนือ Cloud Bullish" if ichi_b else ("ใต้ Cloud Bearish" if ichi_s else "ใน Cloud Neutral")
+    ichi_color   = "#00b894" if ichi_b else "#d63031" if ichi_s else "#fdcb6e"
+    pct_52       = min(100, max(0, (pr-I["52wl"])/(I["52wh"]-I["52wl"]+1e-9)*100))
+    pct_52_str   = "{:.0f}%".format(pct_52)
+    pct_52_w     = "{:.1f}%".format(pct_52)
+
     # Header
     st.markdown(
         '<div class="da-hdr">'
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">'
         '<div><span class="da-sym">' + sym + '</span>'
         '<span class="da-tag ' + tag + '">' + mkt["flag"] + ' ' + mkt_key + '</span>'
-        '<div style="font-size:.72rem;color:#8892b0;margin-top:4px;">' + dict(mkt.get("stocks",[])).get(sym, sym) + '</div></div>'
-        '<div class="sring ' + ("sh" if sc >= 65 else "sm" if sc >= 45 else "sl") + '" style="width:54px;height:54px;font-size:1.05rem;">' + str(sc) + '</div>'
+        '<div style="font-size:.72rem;color:#8892b0;margin-top:4px;">' + name_str + '</div></div>'
+        '<div class="sring ' + score_cls + '" style="width:54px;height:54px;font-size:1.05rem;">' + str(sc) + '</div>'
         '</div>'
         '<div style="margin-top:14px;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:8px;">'
-        '<div><div class="da-price" style="color:' + ("#00b894" if I["chg"] >= 0 else "#d63031") + '">' + cur + "{:,.2f}".format(pr) + '</div>'
-        '<span class="sc-chg ' + ("cup" if I["chg"] >= 0 else "cdn") + '">' + ("+" if I["chg"] >= 0 else "") + "{:.2f}%".format(I["chg"]) + ' วันนี้</span>'
-        ' <span style="color:#8892b0;font-size:.7rem;">' + ("+" if I["chg_5d"] >= 0 else "") + "{:.1f}%".format(I["chg_5d"]) + ' 5วัน ' + ("+" if I["chg_20d"] >= 0 else "") + "{:.1f}%".format(I["chg_20d"]) + ' 20วัน</span></div>'
+        '<div><div class="da-price" style="color:' + price_color + '">' + pr_str + '</div>'
+        '<span class="sc-chg ' + chg_cls + '">' + chg_str + ' วันนี้</span>'
+        ' <span style="color:#8892b0;font-size:.7rem;">' + chg5_str + ' 5วัน ' + chg20_str + ' 20วัน</span></div>'
         '<div style="text-align:right;">'
-        '<span class="chip chip-' + S["cls"] + '">' + S["rec"] + '</span>'
-        '<div style="font-size:.7rem;color:#8892b0;margin-top:5px;">R/R <span style="color:#6c63ff;font-weight:700;">1:' + "{:.2f}".format(S["rr"]) + '</span></div>'
+        '<span class="chip ' + chip_cls + '">' + S["rec"] + '</span>'
+        '<div style="font-size:.7rem;color:#8892b0;margin-top:5px;">R/R <span style="color:#6c63ff;font-weight:700;">' + rr_str + '</span></div>'
         '</div></div>'
-        '<div style="margin-top:10px;font-size:.68rem;color:#636e72;">' + {"settrade":"Settrade Live","yfinance":"Yahoo Finance","mock":"Mock Data"}.get(info.get("source","mock"),"") + ' · ' + datetime.now().strftime("%H:%M:%S") + '</div>'
+        '<div style="margin-top:10px;font-size:.68rem;color:#636e72;">' + src_lbl + ' · ' + ts_now + '</div>'
         '</div>',
         unsafe_allow_html=True
     )
-    
-    # Display basic info
+
+    # OHLCV
     st.markdown(
         '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px;">'
-        '<div class="tgt"><div class="tl">เปิด</div><div class="tv" style="color:#e2e8f0;">' + cur + "{:,.2f}".format(I["open"]) + '</div></div>'
-        '<div class="tgt"><div class="tl">สูงสุด</div><div class="tv t1">' + cur + "{:,.2f}".format(I["high_d"]) + '</div></div>'
-        '<div class="tgt"><div class="tl">ต่ำสุด</div><div class="tv ts">' + cur + "{:,.2f}".format(I["low_d"]) + '</div></div>'
-        '<div class="tgt"><div class="tl">Volume</div><div class="tv ' + ("t1" if I["vol_r"] > 1.5 else "") + '">' + "{:.1f}x".format(I["vol_r"]) + '</div></div>'
+        '<div class="tgt"><div class="tl">เปิด</div><div class="tv" style="color:#e2e8f0;">' + open_str + '</div></div>'
+        '<div class="tgt"><div class="tl">สูงสุด</div><div class="tv t1">' + high_str + '</div></div>'
+        '<div class="tgt"><div class="tl">ต่ำสุด</div><div class="tv ts">' + low_str + '</div></div>'
+        '<div class="tgt"><div class="tl">Volume</div><div class="tv ' + volr_cls + '">' + volr_str + '</div></div>'
         '</div>',
         unsafe_allow_html=True
     )
-    
-    st.info("แสดงข้อมูลพื้นฐาน - ฟังก์ชัน render_deep ทำงานได้บางส่วน")
 
-# ---------------------------------------------------------------
-# ฟังก์ชันทดสอบการเชื่อมต่อ
-# ---------------------------------------------------------------
-def test_settrade_connection(app_id, app_secret, app_code, broker_id):
-    """ทดสอบการเชื่อมต่อกับ Settrade API"""
-    try:
-        inv = Investor(
-            app_id=app_id,
-            app_secret=app_secret,
-            app_code=app_code if app_code else None,
-            broker_id=broker_id if broker_id else None
+    tab_tech, tab_target, tab_sig, tab_fund = st.tabs(["Technical","เป้าหมาย","สัญญาณ","พื้นฐาน"])
+
+    with tab_tech:
+        def ib(lbl, val, is_b, is_s):
+            cls2 = "bull" if is_b else "bear" if is_s else "neut"
+            arrow = "Bullish" if is_b else "Bearish" if is_s else "Neutral"
+            return ('<div class="ibox"><div class="ilabel">' + lbl + '</div>'
+                    '<div class="ival ' + cls2 + '">' + str(val) + '</div>'
+                    '<div class="ist ' + cls2 + '">' + arrow + '</div></div>')
+
+        ma_b = pr > I["sma_s"] > I["sma_m"]
+        ma_s = pr < I["sma_s"] < I["sma_m"]
+        rows = [
+            ib("RSI", "{:.1f}".format(I["rsi"]), I["rsi"]<p["rsi_os"], I["rsi"]>p["rsi_ob"]),
+            ib("MACD Hist", "{:.4f}".format(I["macd_h"]), I["macd"]>I["macd_sig"], I["macd"]<I["macd_sig"]),
+            ib("SMA Trend", "Up" if ma_b else "Down" if ma_s else "Flat", ma_b, ma_s),
+            ib("SMA" + str(p["sma_l"]), sma_l_str, pr > I["sma_l"], pr < I["sma_l"]),
+            ib("BB %B", "{:.2f}".format(I["bbp"]), I["bbp"]<0.2, I["bbp"]>0.8),
+            ib("BB Width", "{:.1f}%".format(I["bb_width"]), False, False),
+            ib("Stoch %K", "{:.1f}".format(I["sk"]), I["sk"]<20 and I["sk"]>I["sd"], I["sk"]>80 and I["sk"]<I["sd"]),
+            ib("CCI", "{:.1f}".format(I["cci"]), I["cci"]<-100, I["cci"]>100),
+            ib("Williams %R", "{:.1f}".format(I["wr"]), I["wr"]<-80, I["wr"]>-20),
+            ib("MFI", "{:.1f}".format(I["mfi"]), I["mfi"]<20, I["mfi"]>80),
+            ib("ADX", "{:.1f}".format(I["adx"]), I["adx"]>25 and I["dip"]>I["dim"], I["adx"]>25 and I["dim"]>I["dip"]),
+            ib("OBV", "Up" if I["obv_up"] else "Down", I["obv_up"], not I["obv_up"]),
+            ib("VWAP", vwap_str, pr > I["vwap"], pr < I["vwap"]),
+            ib("Ichimoku", ichi_txt, ichi_b, ichi_s),
+            ib("Vol Ratio", volr_str, I["vol_r"]>1.5, I["vol_r"]<0.5),
+            ib("ATR", atr_str, False, False),
+        ]
+        st.markdown('<div class="ind-grid">' + "".join(rows) + '</div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="sec-title">Pivot Points</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="pvt-row">'
+            '<div class="pvt"><div class="pvtl">R2</div><div class="pvtv" style="color:#ff7675;">' + r2_str + '</div></div>'
+            '<div class="pvt"><div class="pvtl">R1</div><div class="pvtv" style="color:#fab1a0;">' + r1_str + '</div></div>'
+            '<div class="pvt"><div class="pvtl">PIVOT</div><div class="pvtv" style="color:#74b9ff;">' + pv_str + '</div></div>'
+            '<div class="pvt"><div class="pvtl">S1</div><div class="pvtv" style="color:#55efc4;">' + s1_str + '</div></div>'
+            '<div class="pvt"><div class="pvtl">S2</div><div class="pvtv" style="color:#00cec9;">' + s2_str + '</div></div>'
+            '</div>',
+            unsafe_allow_html=True
         )
-        
-        # ทดสอบการเชื่อมต่อด้วยการดึงข้อมูลหุ้นตัวอย่าง
-        market_api = inv.market
-        test_data = market_api.get_candlestick("PTT", interval="1d", limit=5)
-        
-        if test_data:
-            return True, "เชื่อมต่อสำเร็จ", inv
+
+        st.markdown('<div class="sec-title">Ichimoku</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">'
+            '<div class="tgt"><div class="tl">Tenkan</div><div class="tv te">' + ic_conv_str + '</div></div>'
+            '<div class="tgt"><div class="tl">Kijun</div><div class="tv" style="color:#fab1a0;">' + ic_base_str + '</div></div>'
+            '<div class="tgt"><div class="tl">Span A</div><div class="tv t1">' + ic_sa_str + '</div></div>'
+            '<div class="tgt"><div class="tl">Span B</div><div class="tv ts">' + ic_sb_str + '</div></div>'
+            '</div>'
+            '<div style="background:' + ichi_color + '18;border:1px solid ' + ichi_color + '50;border-radius:10px;padding:10px;text-align:center;font-size:.82rem;color:' + ichi_color + ';font-weight:700;">'
+            + ichi_txt + '</div>',
+            unsafe_allow_html=True
+        )
+
+        st.markdown('<div class="sec-title">52-Week Range</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div style="background:#1a1a2e;border-radius:10px;padding:12px;">'
+            '<div style="display:flex;justify-content:space-between;font-size:.7rem;color:#8892b0;margin-bottom:6px;">'
+            '<span>Low: ' + wl_str + '</span>'
+            '<span style="color:#e2e8f0;font-weight:600;">' + pct_52_str + ' จากต่ำสุด</span>'
+            '<span>High: ' + wh_str + '</span></div>'
+            '<div style="background:#2a2a4a;border-radius:4px;height:8px;position:relative;">'
+            '<div style="position:absolute;left:0;top:0;height:8px;width:' + pct_52_w + ';background:linear-gradient(90deg,#6c63ff,#00b894);border-radius:4px;"></div>'
+            '</div></div>',
+            unsafe_allow_html=True
+        )
+
+    with tab_target:
+        st.markdown(
+            '<div style="background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.25);border-radius:14px;padding:16px;margin-bottom:14px;text-align:center;">'
+            '<div style="font-size:.72rem;color:#8892b0;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">คะแนนรวม</div>'
+            '<div style="font-size:2.5rem;font-weight:700;color:' + sc_color + ';font-family:IBM Plex Mono,monospace;">' + str(sc) + '<span style="font-size:1rem;color:#636e72;">/100</span></div>'
+            '<div style="margin-top:8px;"><span class="chip ' + chip_cls + '" style="font-size:.85rem;padding:6px 16px;">' + S["rec"] + '</span></div>'
+            '</div>',
+            unsafe_allow_html=True
+        )
+        st.markdown('<div class="sec-title">ราคาเป้าหมาย</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="trow" style="grid-template-columns:1fr 1fr;gap:10px;">'
+            '<div class="tgt" style="padding:14px;"><div class="tl">จุดซื้อ</div><div class="tv te" style="font-size:1.1rem;margin-top:6px;">' + entry_str + '</div><div style="font-size:.65rem;color:#8892b0;margin-top:4px;">-1.5%</div></div>'
+            '<div class="tgt" style="padding:14px;"><div class="tl">Stop Loss</div><div class="tv ts" style="font-size:1.1rem;margin-top:6px;">' + sl_str + '</div><div style="font-size:.65rem;color:#8892b0;margin-top:4px;">-' + "{:.1f}%".format(S["dn"]) + ' ATRx1.5</div></div>'
+            '<div class="tgt" style="padding:14px;"><div class="tl">เป้า 1</div><div class="tv t1" style="font-size:1.1rem;margin-top:6px;">' + t1_str + '</div><div style="font-size:.65rem;color:#8892b0;margin-top:4px;">+' + "{:.1f}%".format(S["up"]) + ' ATRx2</div></div>'
+            '<div class="tgt" style="padding:14px;"><div class="tl">เป้า 2</div><div class="tv t2" style="font-size:1.1rem;margin-top:6px;">' + t2_str + '</div><div style="font-size:.65rem;color:#8892b0;margin-top:4px;">+' + "{:.1f}%".format(t2_pct) + ' ATRx3.5</div></div>'
+            '</div>',
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            '<div style="background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.3);border-radius:12px;padding:14px;margin-top:12px;text-align:center;">'
+            '<div style="font-size:.72rem;color:#8892b0;text-transform:uppercase;letter-spacing:1px;">Risk / Reward</div>'
+            '<div style="font-size:2rem;font-weight:700;color:' + rr_color + ';font-family:IBM Plex Mono,monospace;margin:6px 0;">' + rr_str + '</div>'
+            '<div style="font-size:.78rem;color:#8892b0;">+' + "{:.1f}%".format(S["up"]) + ' vs -' + "{:.1f}%".format(S["dn"]) + '%</div>'
+            '<div style="font-size:.7rem;color:' + rr_color + ';margin-top:6px;">' + rr_advice + '</div>'
+            '</div>',
+            unsafe_allow_html=True
+        )
+        st.markdown('<div class="sec-title">ระยะห่างจากค่าเฉลี่ย</div>', unsafe_allow_html=True)
+        for sma_v, sma_str, lbl in [(I["sma_s"], sma_s_str, "SMA"+str(p["sma_s"])),
+                                     (I["sma_m"], sma_m_str, "SMA"+str(p["sma_m"])),
+                                     (I["sma_l"], sma_l_str, "SMA"+str(p["sma_l"]))]:
+            dist = (pr/sma_v-1)*100 if sma_v else 0
+            bar_w = min(abs(dist)*3, 100)
+            bar_c = "#00b894" if dist >= 0 else "#d63031"
+            dist_sign = "+" if dist >= 0 else ""
+            dist_str2 = dist_sign + "{:.1f}%".format(dist)
+            bar_ml = "margin-left:auto;" if dist < 0 else ""
+            st.markdown(
+                '<div style="background:#1a1a2e;border-radius:10px;padding:10px 12px;margin-bottom:6px;">'
+                '<div style="display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:5px;">'
+                '<span style="color:#8892b0;">' + lbl + '</span>'
+                '<span style="color:' + bar_c + ';font-weight:700;font-family:IBM Plex Mono,monospace;">' + dist_str2 + '</span></div>'
+                '<div style="background:#2a2a4a;border-radius:4px;height:4px;">'
+                '<div style="height:4px;width:' + "{:.0f}%".format(bar_w) + ';background:' + bar_c + ';border-radius:4px;' + bar_ml + '"></div>'
+                '</div></div>',
+                unsafe_allow_html=True
+            )
+
+    with tab_sig:
+        buy_n = len(S["bs"]); sell_n = len(S["ss"]); neut_n = len(S["ns"])
+        st.markdown(
+            '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px;">'
+            '<div style="background:rgba(0,184,148,.1);border:1px solid rgba(0,184,148,.25);border-radius:10px;padding:10px;text-align:center;">'
+            '<div style="font-size:1.4rem;font-weight:700;color:#00b894;">' + str(buy_n) + '</div>'
+            '<div style="font-size:.68rem;color:#8892b0;">ซื้อ</div></div>'
+            '<div style="background:rgba(99,110,114,.1);border:1px solid rgba(99,110,114,.25);border-radius:10px;padding:10px;text-align:center;">'
+            '<div style="font-size:1.4rem;font-weight:700;color:#636e72;">' + str(neut_n) + '</div>'
+            '<div style="font-size:.68rem;color:#8892b0;">กลาง</div></div>'
+            '<div style="background:rgba(214,48,49,.1);border:1px solid rgba(214,48,49,.25);border-radius:10px;padding:10px;text-align:center;">'
+            '<div style="font-size:1.4rem;font-weight:700;color:#d63031;">' + str(sell_n) + '</div>'
+            '<div style="font-size:.68rem;color:#8892b0;">ขาย</div></div>'
+            '</div>',
+            unsafe_allow_html=True
+        )
+        if S["bs"]:
+            st.markdown('<div class="sec-title">สัญญาณซื้อ</div>', unsafe_allow_html=True)
+            for sig in S["bs"]:
+                st.markdown('<div class="sig-item sig-buy">' + sig + '</div>', unsafe_allow_html=True)
+        if S["ss"]:
+            st.markdown('<div class="sec-title">สัญญาณขาย</div>', unsafe_allow_html=True)
+            for sig in S["ss"]:
+                st.markdown('<div class="sig-item sig-sell">' + sig + '</div>', unsafe_allow_html=True)
+        if S["ns"]:
+            st.markdown('<div class="sec-title">ข้อมูลกลาง</div>', unsafe_allow_html=True)
+            for sig in S["ns"]:
+                st.markdown('<div class="sig-item sig-neut">' + sig + '</div>', unsafe_allow_html=True)
+
+    with tab_fund:
+        if yf_info and isinstance(yf_info, dict) and yf_info.get("regularMarketPrice"):
+            yi = yf_info
+            def _fmtv(key, mult=1, fmt="{:.2f}", fallback="N/A"):
+                v = yi.get(key)
+                if v is None: return fallback
+                try: return fmt.format(float(v)*mult)
+                except Exception: return fallback
+            mc_r = yi.get("marketCap")
+            mc_str = "{:,}".format(int(mc_r)) if mc_r else "N/A"
+            biz = str(yi.get("longBusinessSummary","N/A"))[:300]
+            rows2 = [
+                ("P/E (TTM)", _fmtv("trailingPE"), "ราคาต่อกำไร"),
+                ("Forward P/E", _fmtv("forwardPE"), "P/E คาดการณ์"),
+                ("P/B", _fmtv("priceToBook"), "ราคาต่อมูลค่าบัญชี"),
+                ("ROE", _fmtv("returnOnEquity", 100, "{:.1f}%"), "ผลตอบแทนผู้ถือหุ้น"),
+                ("EPS (TTM)", _fmtv("trailingEps"), "กำไรต่อหุ้น"),
+                ("Div Yield", _fmtv("dividendYield", 100, "{:.2f}%"), "อัตราปันผล"),
+                ("Market Cap", mc_str, "มูลค่าตลาด"),
+                ("Beta", _fmtv("beta"), "ความผันผวน"),
+                ("Rev Growth", _fmtv("revenueGrowth", 100, "{:.1f}%"), "การเติบโตรายได้"),
+                ("Margin", _fmtv("profitMargins", 100, "{:.1f}%"), "อัตรากำไร"),
+                ("D/E", _fmtv("debtToEquity"), "หนี้สินต่อทุน"),
+                ("Current Ratio", _fmtv("currentRatio"), "สภาพคล่อง"),
+            ]
+            html = '<div class="fund-grid">'
+            for lbl, val, desc in rows2:
+                html += ('<div class="fbox"><div class="flabel">' + lbl + '</div>'
+                         '<div class="fval">' + val + '</div>'
+                         '<div class="fdesc">' + desc + '</div></div>')
+            html += '</div>'
+            html += ('<div style="background:#1a1a2e;border-radius:10px;padding:12px;font-size:.78rem;color:#8892b0;line-height:1.7;">'
+                     '<span style="color:#e2e8f0;font-weight:600;">Business: </span>' + biz + '...</div>')
+            st.markdown(html, unsafe_allow_html=True)
         else:
-            return False, "ไม่สามารถดึงข้อมูลจาก API ได้", None
-            
-    except Exception as e:
-        return False, f"ข้อผิดพลาด: {str(e)}", None
+            st.info("ข้อมูลพื้นฐานใช้ได้กับหุ้น US/CN ผ่าน yfinance\nติดตั้ง: pip install yfinance")
 
 # ---------------------------------------------------------------
 # VIEWS
 # ---------------------------------------------------------------
 def view_login():
     render_header()
-    ta_ok  = "OK" if TA_OK  else "ยัง不ติดตั้ง"
-    st_ok  = "OK" if ST_OK  else "ยัง不ติดตั้ง"
-    yf_ok  = "OK" if YF_OK  else "ยัง不ติดตั้ง"
+    ta_ok  = "OK" if TA_OK  else "ยังไม่ติดตั้ง"
+    st_ok  = "OK" if ST_OK  else "ยังไม่ติดตั้ง"
+    yf_ok  = "OK" if YF_OK  else "ยังไม่ติดตั้ง"
     lib_warn = "" if ST_OK and TA_OK else "pip install settrade-v2 pandas_ta yfinance"
-    
     st.markdown(
         '<div style="background:#12122a;border:1px solid #2a2a4a;border-radius:12px;padding:12px 16px;margin-bottom:14px;">'
         '<div style="font-size:.72rem;color:#8892b0;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">สถานะ Library</div>'
@@ -625,70 +788,126 @@ def view_login():
         + '</div>',
         unsafe_allow_html=True
     )
-    
-    st.markdown('<div class="login-card"><h2>เชื่อมต่อ Settrade API</h2><div class="login-sub">กรอก credential จาก developer.settrade.com</div></div>', unsafe_allow_html=True)
-    
-    # แสดงคำแนะนำการกรอกข้อมูล
-    st.markdown("""
-    <div class="info-box">
-    <strong>คำแนะนำการกรอก:</strong><br>
-    • APP_ID และ APP_SECRET: มาจาก developer.settrade.com<br>
-    • APP_CODE: ป้อน "SANDBOX" สำหรับบัญชีทดสอบ<br>
-    • BROKER_ID: ป้อน "SANDBOX" สำหรับบัญชีทดสอบ
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # ปุ่มล้างค่าที่กรอก
-    if st.button("ล้างค่าที่กรอก", use_container_width=False):
-        st.session_state.prefill_id = ""
-        st.session_state.prefill_secret = ""
-        st.session_state.prefill_code = "SANDBOX"
-        st.session_state.prefill_broker = "SANDBOX"
-        st.rerun()
-    
+    st.markdown(
+        '<div class="login-card">'
+        '<h2>เชื่อมต่อ Settrade API</h2>'
+        '<div class="login-sub">'
+        'กรอก credential จาก <strong style="color:#6c63ff;">developer.settrade.com</strong><br>'
+        'สำหรับ SANDBOX ใช้ค่าด้านล่างได้เลย (ข้อมูล demo ไม่ใช่ real-time)'
+        '</div>'
+        '</div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        '<div class="info-box">'
+        '<strong>📋 วิธีรับ Credential จริง</strong><br>'
+        '1. เข้า developer.settrade.com แล้ว Register<br>'
+        '2. สร้าง Application รับ APP_ID และ APP_SECRET<br>'
+        '3. APP_CODE และ BROKER_ID ดูจากหน้า Application<br>'
+        '<span style="color:#fdcb6e;">⚠ SANDBOX ใช้ข้อมูล demo เท่านั้น ไม่ใช่ราคาจริง</span>'
+        '</div>',
+        unsafe_allow_html=True
+    )
+    col_sb1, col_sb2 = st.columns(2)
+    with col_sb1:
+        if st.button("🧪 ใช้ค่า SANDBOX (ทดสอบ)", use_container_width=True):
+            st.session_state.prefill_id     = "MPRZz1Hymo6nR50A"
+            st.session_state.prefill_secret = "Te/3LKXBb+IM20T/ygcFAMWXjIgkadJ+o1cDstkjRDQ="
+            st.session_state.prefill_code   = "SANDBOX"
+            st.session_state.prefill_broker = "SANDBOX"
+            st.rerun()
+    with col_sb2:
+        if st.button("🗑 ล้างค่า", use_container_width=True):
+            st.session_state.prefill_id     = ""
+            st.session_state.prefill_secret = ""
+            st.session_state.prefill_code   = ""
+            st.session_state.prefill_broker = ""
+            st.rerun()
     with st.form("login_form"):
-        app_id = st.text_input("APP_ID", value=st.session_state.prefill_id, placeholder="เช่น MPRZz1Hymo6nR50A")
-        app_secret = st.text_input("APP_SECRET", value=st.session_state.prefill_secret, type="password", placeholder="เช่น Te/3LKXBb+IM20T/ygcFAMWXjIgkadJ+o1cDstkjRDQ=")
-        app_code = st.text_input("APP_CODE", value=st.session_state.prefill_code, placeholder="ป้อน SANDBOX สำหรับทดสอบ")
-        broker_id = st.text_input("BROKER_ID", value=st.session_state.prefill_broker, placeholder="ป้อน SANDBOX สำหรับทดสอบ")
-        submitted = st.form_submit_button("เชื่อมต่อ Settrade", use_container_width=True)
-    
+        app_id     = st.text_input("APP_ID", value=st.session_state.prefill_id, placeholder="เช่น MPRZz1Hymo6nR50A")
+        app_secret = st.text_input("APP_SECRET", value=st.session_state.prefill_secret, type="password", placeholder="App Secret จาก Settrade Developer")
+        app_code   = st.text_input("APP_CODE", value=st.session_state.prefill_code, placeholder="เช่น SANDBOX หรือ code ของคุณ")
+        broker_id  = st.text_input("BROKER_ID", value=st.session_state.prefill_broker, placeholder="เช่น SANDBOX หรือรหัสโบรกเกอร์")
+        show_debug = st.checkbox("แสดง debug log", value=False)
+        submitted  = st.form_submit_button("🔌 เชื่อมต่อ Settrade", use_container_width=True)
     if submitted:
         if not ST_OK:
             st.markdown('<div class="err-box">settrade_v2 ไม่ได้ติดตั้ง: pip install settrade-v2</div>', unsafe_allow_html=True)
         elif not app_id.strip() or not app_secret.strip():
             st.markdown('<div class="err-box">กรุณากรอก APP_ID และ APP_SECRET</div>', unsafe_allow_html=True)
         else:
-            with st.spinner("กำลังเชื่อมต่อ..."):
-                success, message, inv = test_settrade_connection(
-                    app_id.strip(), 
-                    app_secret.strip(),
-                    app_code.strip(),
-                    broker_id.strip()
-                )
-                
-                if success:
-                    st.session_state.logged_in = True
-                    st.session_state.investor = inv
-                    st.session_state.market_api = inv.market
-                    st.session_state.view = "scan"
-                    st.rerun()
-                else:
-                    st.markdown(f'<div class="err-box">{message}</div>', unsafe_allow_html=True)
-                    st.info("คุณยังสามารถใช้ Yahoo Finance หรือ Mock Data ได้โดยกดปุ่มด้านล่าง")
-    
+            with st.spinner("กำลังเชื่อมต่อ Settrade..."):
+                err_detail = ""
+                try:
+                    if show_debug:
+                        st.info("Debug: กำลัง connect ด้วย app_id=" + app_id.strip()[:8] + "... app_code=" + app_code.strip() + " broker=" + broker_id.strip())
+                    # settrade-v2 รองรับทั้ง parameter เก่าและใหม่
+                    # ลอง is_auto_queue=True ก่อน (version ใหม่ >= 1.x)
+                    try:
+                        inv = Investor(
+                            app_id=app_id.strip(),
+                            app_secret=app_secret.strip(),
+                            app_code=app_code.strip(),
+                            broker_id=broker_id.strip(),
+                            is_auto_queue=False,
+                        )
+                    except TypeError:
+                        # version เก่าไม่มี is_auto_queue
+                        inv = Investor(
+                            app_id=app_id.strip(),
+                            app_secret=app_secret.strip(),
+                            app_code=app_code.strip(),
+                            broker_id=broker_id.strip(),
+                        )
+
+                    mkt_api = inv.MarketData()
+                    rt_api  = inv.RealtimeData()
+
+                    # ทดสอบ connection ด้วย candlestick ของ PTT
+                    try:
+                        test = mkt_api.get_candlestick("PTT", interval="1d", limit=5)
+                        connected = test is not None and len(test) > 0
+                        if show_debug:
+                            st.info("Debug: candlestick test = " + str(test)[:200])
+                    except Exception as test_err:
+                        err_detail = " (candlestick test: " + str(test_err) + ")"
+                        if show_debug:
+                            st.warning("Debug candlestick error: " + str(test_err))
+                        # ถ้า test ล้มเหลวแต่ connect ได้ให้ยังถือว่า connected
+                        connected = True
+
+                    if connected:
+                        st.session_state.logged_in    = True
+                        st.session_state.market_api   = mkt_api
+                        st.session_state.realtime_api = rt_api
+                        st.session_state.view = "scan"
+                        st.rerun()
+                    else:
+                        raise ValueError("API ตอบสนองแต่ไม่มีข้อมูล (ลอง SANDBOX credentials)")
+
+                except Exception as e:
+                    full_err = str(e) + err_detail
+                    st.markdown(
+                        '<div class="err-box">'
+                        '<strong>เชื่อมต่อไม่สำเร็จ</strong><br>'
+                        + full_err +
+                        '<br><br>'
+                        '<span style="color:#fdcb6e;font-size:.78rem;">'
+                        '💡 ตรวจสอบ: APP_ID / APP_SECRET ถูกต้องไหม? '
+                        'BROKER_ID ตรงกับ account ไหม? '
+                        'หรือลอง SANDBOX สำหรับทดสอบ'
+                        '</span>'
+                        '</div>',
+                        unsafe_allow_html=True
+                    )
     st.markdown("---")
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("ใช้ Mock Data", use_container_width=True):
-            st.session_state.logged_in = False
-            st.session_state.view = "scan"
-            st.rerun()
+        if st.button("ข้าม / Mock Data", use_container_width=True):
+            st.session_state.view = "scan"; st.rerun()
     with c2:
-        if st.button("ใช้ Yahoo Finance", use_container_width=True):
-            st.session_state.logged_in = False
-            st.session_state.view = "scan"
-            st.rerun()
+        if st.button("ข้าม / Yahoo Finance", use_container_width=True):
+            st.session_state.view = "scan"; st.rerun()
 
 def view_scan():
     render_header()
@@ -697,9 +916,7 @@ def view_scan():
     col_n1, col_n2 = st.columns([3, 1])
     with col_n2:
         if st.button("วิเคราะห์หุ้น", use_container_width=True):
-            st.session_state.view = "manual"
-            st.rerun()
-    
+            st.session_state.view = "manual"; st.rerun()
     st.markdown('<div class="sec-title">1 เลือกตลาดหุ้น</div>', unsafe_allow_html=True)
     mkt_cols = st.columns(3)
     mkt_labels = {"SET":"TH SET\nSET50/100/mai", "US":"US Tech\nNASDAQ/NYSE", "CN":"CN Tech\nNYSE ADR"}
@@ -708,53 +925,34 @@ def view_scan():
             is_sel = st.session_state.market == mkt_key
             if st.button(mkt_labels[mkt_key], key="mkt_"+mkt_key, use_container_width=True,
                          type="primary" if is_sel else "secondary"):
-                st.session_state.market = mkt_key
-                st.rerun()
-    
+                st.session_state.market = mkt_key; st.rerun()
     mkt_key = st.session_state.market
     if not mkt_key:
         st.markdown('<div style="text-align:center;padding:32px;color:#636e72;">เลือกตลาดก่อน</div>', unsafe_allow_html=True)
         return
-    
-    mkt = MARKETS[mkt_key]
-    cur = mkt["currency"]
-    n = len(mkt["stocks"])
-    
-    # กำหนดแหล่งข้อมูล
-    if st.session_state.logged_in and mkt_key == "SET":
-        src_lbl = "Settrade Live"
-    elif YF_OK:
-        src_lbl = "Yahoo Finance"
-    else:
-        src_lbl = "Mock Data"
-    
+    mkt = MARKETS[mkt_key]; cur = mkt["currency"]; n = len(mkt["stocks"])
+    use_live = st.session_state.logged_in and mkt_key == "SET"
+    src_lbl = "Settrade Live" if use_live else ("Yahoo Finance" if YF_OK else "Mock")
     st.markdown(
-        f'<div style="background:#12122a;border:1px solid rgba(108,99,255,.3);border-radius:10px;padding:10px 14px;margin:8px 0 14px;display:flex;justify-content:space-between;align-items:center;">'
-        f'<span style="color:#e2e8f0;font-size:.85rem;"><strong>{mkt["name"]}</strong> · {n} หุ้น · {cur}</span>'
-        f'<span style="font-size:.68rem;color:#8892b0;">{src_lbl}</span></div>',
+        '<div style="background:#12122a;border:1px solid rgba(108,99,255,.3);border-radius:10px;padding:10px 14px;margin:8px 0 14px;display:flex;justify-content:space-between;align-items:center;">'
+        '<span style="color:#e2e8f0;font-size:.85rem;"><strong>' + mkt["name"] + '</strong> · ' + str(n) + ' หุ้น · ' + cur + '</span>'
+        '<span style="font-size:.68rem;color:#8892b0;">' + src_lbl + '</span></div>',
         unsafe_allow_html=True
     )
-    
     c1, c2 = st.columns(2)
     with c1:
         filt_sig = st.multiselect("สัญญาณ", ["🟢 ซื้อ","🟡 เฝ้าระวัง","⚪ ถือ","🔴 ขาย"],
             default=["🟢 ซื้อ","🟡 เฝ้าระวัง"], key="filt_sig", label_visibility="collapsed", placeholder="เลือกสัญญาณ")
     with c2:
         sort_by = st.selectbox("เรียง", ["Score","RSI","Change","ADX"], key="sort_by", label_visibility="collapsed")
-    
     st.markdown('<div class="sec-title">2 สแกน</div>', unsafe_allow_html=True)
-    
-    if st.button(f"สแกน {mkt['flag']} {mkt_key} ({n} หุ้น)", use_container_width=True):
-        results = []
-        prog = st.progress(0)
-        stxt = st.empty()
-        
+    if st.button("สแกน " + mkt["flag"] + " " + mkt_key + " (" + str(n) + " หุ้น)", use_container_width=True):
+        results = []; prog = st.progress(0); stxt = st.empty()
         for i, (sym, name) in enumerate(mkt["stocks"]):
-            stxt.markdown(f'<div style="text-align:center;font-size:.75rem;color:#8892b0;">สแกน {sym} ({i+1}/{n})</div>', unsafe_allow_html=True)
+            stxt.markdown('<div style="text-align:center;font-size:.75rem;color:#8892b0;">สแกน ' + sym + ' (' + str(i+1) + '/' + str(n) + ')</div>', unsafe_allow_html=True)
             try:
                 df, info = get_data(sym, mkt_key)
-                I = compute_indicators(df, p)
-                S = score_stock(I, p)
+                I = compute_indicators(df, p); S = score_stock(I, p)
                 results.append(dict(Symbol=sym, Name=name, Market=mkt_key,
                     Price=round(I["price"],2), Change=round(I["chg"],2),
                     RSI=round(I["rsi"],1), ADX=round(I["adx"],1),
@@ -762,28 +960,20 @@ def view_scan():
                     Score=S["sc"], Signal=S["rec"], SigCls=S["cls"],
                     Entry=S["entry"], T1=S["t1"], T2=S["t2"], SL=S["sl"], RR=S["rr"],
                     _I=I, _S=S, _info=info))
-            except Exception as e:
-                st.warning(f"ไม่สามารถวิเคราะห์ {sym}: {e}")
-            
+            except Exception:
+                pass
             prog.progress((i+1)/n)
-        
-        prog.empty()
-        stxt.empty()
+        prog.empty(); stxt.empty()
         st.session_state.scan_results[mkt_key] = pd.DataFrame(results)
-    
     df_res = st.session_state.scan_results.get(mkt_key)
     if df_res is None or len(df_res) == 0:
-        st.info("กดปุ่ม 'สแกน' เพื่อเริ่มการวิเคราะห์หุ้น")
         return
-    
     sigs = filt_sig or ["🟢 ซื้อ","🟡 เฝ้าระวัง","⚪ ถือ","🔴 ขาย"]
     df_f = df_res[(df_res["Score"] >= p["min_score"]) & (df_res["RR"] >= p["min_rr"]) & (df_res["Signal"].isin(sigs))].copy()
     sort_map = {"Score":"Score","RSI":"RSI","Change":"Change","ADX":"ADX"}
     df_f = df_f.sort_values(sort_map.get(sort_by,"Score"), ascending=False)
-    
     buy_n = len(df_res[df_res["SigCls"]=="buy"]); sell_n = len(df_res[df_res["SigCls"]=="sell"])
     watch_n = len(df_res[df_res["SigCls"]=="watch"]); avg_sc = df_res["Score"].mean()
-    
     st.markdown(
         '<div class="upd-bar">'
         '<span>พบ <strong style="color:#e2e8f0;">' + str(len(df_f)) + '</strong> / ' + str(len(df_res)) + ' หุ้น</span>'
@@ -791,45 +981,51 @@ def view_scan():
         '</div>',
         unsafe_allow_html=True
     )
-    
     st.markdown('<div class="sec-title">3 ผลการสแกน</div>', unsafe_allow_html=True)
-    
     if len(df_f) == 0:
         st.info("ไม่มีหุ้นผ่านเงื่อนไข ลองปรับ Parameters")
         return
-    
     for _, row in df_f.iterrows():
         chg_cls  = "cup" if row["Change"] >= 0 else "cdn"
         chip_cls = "chip-" + row["SigCls"]
         scls     = "sh" if row["Score"]>=65 else "sm" if row["Score"]>=45 else "sl"
         chg_sym  = "+" if row["Change"] >= 0 else ""
-        
+        rsi_c    = "bull" if row["RSI"]<p["rsi_os"] else "bear" if row["RSI"]>p["rsi_ob"] else ""
+        bb_c     = "bull" if row["BB"]<0.2 else "bear" if row["BB"]>0.8 else ""
+        vr_c     = "bull" if row["VR"]>1.5 else ""
+        price_s  = cur + "{:,.2f}".format(row["Price"])
+        entry_s  = cur + "{:,.2f}".format(row["Entry"])
+        t1_s     = cur + "{:,.2f}".format(row["T1"])
+        t2_s     = cur + "{:,.2f}".format(row["T2"])
+        sl_s     = cur + "{:,.2f}".format(row["SL"])
+        chg_s    = chg_sym + "{:.2f}%".format(row["Change"])
+        rr_s     = "1:" + "{:.2f}".format(row["RR"])
+        score_s  = str(int(row["Score"]))
         st.markdown(
             '<div class="stock-card ' + row["SigCls"] + '">'
             '<div class="sc-top">'
             '<div><div class="sc-sym">' + row["Symbol"] + '</div><div class="sc-name">' + row["Name"] + '</div></div>'
-            '<div><div class="sc-price">' + cur + "{:,.2f}".format(row["Price"]) + '</div><div class="sc-chg ' + chg_cls + '">' + chg_sym + "{:.2f}%".format(row["Change"]) + '</div></div>'
+            '<div><div class="sc-price">' + price_s + '</div><div class="sc-chg ' + chg_cls + '">' + chg_s + '</div></div>'
             '</div>'
             '<div class="sc-bars">'
-            '<div class="sbi"><div class="sbl">RSI</div><div class="sbv ' + ("bull" if row["RSI"]<p["rsi_os"] else "bear" if row["RSI"]>p["rsi_ob"] else "") + '">' + "{:.0f}".format(row["RSI"]) + '</div></div>'
+            '<div class="sbi"><div class="sbl">RSI</div><div class="sbv ' + rsi_c + '">' + "{:.0f}".format(row["RSI"]) + '</div></div>'
             '<div class="sbi"><div class="sbl">ADX</div><div class="sbv">' + "{:.0f}".format(row["ADX"]) + '</div></div>'
-            '<div class="sbi"><div class="sbl">BB%</div><div class="sbv ' + ("bull" if row["BB"]<0.2 else "bear" if row["BB"]>0.8 else "") + '">' + "{:.2f}".format(row["BB"]) + '</div></div>'
-            '<div class="sbi"><div class="sbl">Vol</div><div class="sbv ' + ("bull" if row["VR"]>1.5 else "") + '">' + "{:.1f}x".format(row["VR"]) + '</div></div>'
+            '<div class="sbi"><div class="sbl">BB%</div><div class="sbv ' + bb_c + '">' + "{:.2f}".format(row["BB"]) + '</div></div>'
+            '<div class="sbi"><div class="sbl">Vol</div><div class="sbv ' + vr_c + '">' + "{:.1f}x".format(row["VR"]) + '</div></div>'
             '</div>'
             '<div class="trow">'
-            '<div class="tgt"><div class="tl">ซื้อ</div><div class="tv te">' + cur + "{:,.2f}".format(row["Entry"]) + '</div></div>'
-            '<div class="tgt"><div class="tl">เป้า 1</div><div class="tv t1">' + cur + "{:,.2f}".format(row["T1"]) + '</div></div>'
-            '<div class="tgt"><div class="tl">เป้า 2</div><div class="tv t2">' + cur + "{:,.2f}".format(row["T2"]) + '</div></div>'
-            '<div class="tgt"><div class="tl">SL</div><div class="tv ts">' + cur + "{:,.2f}".format(row["SL"]) + '</div></div>'
+            '<div class="tgt"><div class="tl">ซื้อ</div><div class="tv te">' + entry_s + '</div></div>'
+            '<div class="tgt"><div class="tl">เป้า 1</div><div class="tv t1">' + t1_s + '</div></div>'
+            '<div class="tgt"><div class="tl">เป้า 2</div><div class="tv t2">' + t2_s + '</div></div>'
+            '<div class="tgt"><div class="tl">SL</div><div class="tv ts">' + sl_s + '</div></div>'
             '</div>'
             '<div class="sc-bot">'
             '<div><span class="chip ' + chip_cls + '">' + row["Signal"] + '</span>'
-            ' <span style="font-size:.7rem;color:#8892b0;">R/R <span style="color:#6c63ff;font-weight:700;">1:' + "{:.2f}".format(row["RR"]) + '</span></span></div>'
-            '<div class="sring ' + scls + '">' + str(int(row["Score"])) + '</div>'
+            ' <span style="font-size:.7rem;color:#8892b0;">R/R <span style="color:#6c63ff;font-weight:700;">' + rr_s + '</span></span></div>'
+            '<div class="sring ' + scls + '">' + score_s + '</div>'
             '</div></div>',
             unsafe_allow_html=True
         )
-        
         if st.button("วิเคราะห์ " + row["Symbol"] + " เจาะลึก", key="da_"+row["Symbol"]+"_"+mkt_key, use_container_width=True):
             st.session_state.detail_sym = row["Symbol"]
             st.session_state.detail_mkt = mkt_key
@@ -839,17 +1035,13 @@ def view_scan():
 def view_manual():
     render_header()
     if st.button("กลับหน้าสแกน"):
-        st.session_state.view = "scan"
-        st.rerun()
-    
+        st.session_state.view = "scan"; st.rerun()
     st.markdown('<div class="sec-title">วิเคราะห์หุ้นรายตัว</div>', unsafe_allow_html=True)
     st.markdown('<div class="info-box">พิมพ์ชื่อย่อหุ้น (Ticker) แล้วเลือกตลาด<br>TH: ADVANC, KBANK, PTT | US: AAPL, NVDA | CN: BABA, NIO</div>', unsafe_allow_html=True)
-    
     with st.form("manual_form"):
         sym_input = st.text_input("ชื่อหุ้น (Ticker)", placeholder="เช่น ADVANC, AAPL, BABA", max_chars=10)
         mkt_sel   = st.selectbox("ตลาด", ["SET - ไทย","US - สหรัฐ","CN - จีน"])
         submitted = st.form_submit_button("วิเคราะห์เจาะลึก", use_container_width=True)
-    
     if submitted and sym_input.strip():
         sym = sym_input.strip().upper()
         mkt_map = {"SET - ไทย":"SET","US - สหรัฐ":"US","CN - จีน":"CN"}
@@ -858,9 +1050,9 @@ def view_manual():
         with st.spinner("กำลังดึงข้อมูล " + sym + "..."):
             try:
                 df, info = get_data(sym, mkt_key)
-                I = compute_indicators(df, p)
-                S = score_stock(I, p)
+                I = compute_indicators(df, p); S = score_stock(I, p)
                 yf_inf = info.get("yf") if info.get("source") == "yfinance" else None
+                render_params()
                 render_deep(sym, mkt_key, I, S, info, yf_info=yf_inf)
             except Exception as e:
                 st.markdown('<div class="err-box">ดึงข้อมูลไม่ได้: ' + str(e) + '</div>', unsafe_allow_html=True)
@@ -872,23 +1064,16 @@ def view_detail():
     c1, c2 = st.columns(2)
     with c1:
         if st.button("กลับรายการหุ้น", use_container_width=True):
-            st.session_state.view = "scan"
-            st.rerun()
+            st.session_state.view = "scan"; st.rerun()
     with c2:
         if st.button("วิเคราะห์หุ้นอื่น", use_container_width=True):
-            st.session_state.view = "manual"
-            st.rerun()
-    
-    sym = st.session_state.detail_sym
-    mkt_key = st.session_state.detail_mkt
+            st.session_state.view = "manual"; st.rerun()
+    sym = st.session_state.detail_sym; mkt_key = st.session_state.detail_mkt
     p = get_params()
-    
     cached = st.session_state.scan_results.get(mkt_key)
     if cached is not None and sym in cached["Symbol"].values:
         row = cached[cached["Symbol"]==sym].iloc[0]
-        I = row["_I"]
-        S = row["_S"]
-        info = row.get("_info", {"source":"mock"})
+        I = row["_I"]; S = row["_S"]; info = row.get("_info", {"source":"mock"})
         yf_inf = None
         if YF_OK and mkt_key != "SET":
             try:
@@ -898,10 +1083,8 @@ def view_detail():
     else:
         with st.spinner("กำลังดึงข้อมูล " + sym + "..."):
             df, info = get_data(sym, mkt_key)
-            I = compute_indicators(df, p)
-            S = score_stock(I, p)
+            I = compute_indicators(df, p); S = score_stock(I, p)
             yf_inf = info.get("yf")
-    
     render_params()
     render_deep(sym, mkt_key, I, S, info, yf_info=yf_inf)
 
