@@ -34,90 +34,215 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------
-# CSS
+# CSS — Warm Dark Theme (สบายตา ไม่จ้าเกิน contrast พอดี)
 # ---------------------------------------------------------------
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap');
+
+/* ── รากฐาน: พื้นหลัง warm-dark ไม่ใช่ cold-purple ── */
+:root{
+  --bg0:#18181c;       /* พื้นหลังหลัก */
+  --bg1:#222228;       /* card พื้น */
+  --bg2:#2a2a32;       /* card เข้มขึ้น */
+  --bg3:#32323c;       /* hover / ขอบ */
+  --bdr:#3a3a46;       /* border ทั่วไป */
+  --txt:#dde1e7;       /* ข้อความหลัก — อ่านง่ายบน dark */
+  --txt2:#9ca3af;      /* ข้อความรอง */
+  --txt3:#6b7280;      /* placeholder / muted */
+  --acc:#7c6af0;       /* accent purple อ่อนลง */
+  --grn:#34d399;       /* ซื้อ/บวก — emerald สดแต่ไม่แสบตา */
+  --red:#f87171;       /* ขาย/ลบ — rose อ่อน */
+  --yel:#fbbf24;       /* watch — amber */
+  --cyn:#22d3ee;       /* เป้า 2 — cyan */
+}
+
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html,body,[class*="css"]{font-family:'Sarabun',sans-serif;background:#0d0d14;color:#e2e8f0}
+html,body,[class*="css"]{font-family:'Sarabun',sans-serif;background:var(--bg0);color:var(--txt);font-size:15px;line-height:1.6}
 footer{visibility:hidden}#MainMenu{visibility:hidden}
-header[data-testid="stHeader"]{background:#0d0d14!important}
-.app-hdr{background:linear-gradient(135deg,#12122a,#1a1035,#0f1f3a);border:1px solid rgba(108,99,255,.3);border-radius:16px;padding:18px 16px 14px;text-align:center;margin-bottom:16px}
-.app-hdr h1{font-size:1.4rem;font-weight:700;color:#fff}
-.app-hdr .sub{font-size:.75rem;color:#8892b0;margin-top:4px}
-.ldot{display:inline-block;width:8px;height:8px;background:#00b894;border-radius:50%;margin-right:5px;animation:pulse 1.5s infinite}
-@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(1.3)}}
-.login-card{background:linear-gradient(135deg,#12122a,#1a1a2e);border:1px solid rgba(108,99,255,.35);border-radius:20px;padding:24px 20px;margin:8px 0 20px}
-.login-card h2{font-size:1.1rem;font-weight:700;color:#fff;margin-bottom:4px}
-.login-sub{font-size:.78rem;color:#8892b0;margin-bottom:20px;line-height:1.6}
-.info-box{background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.25);border-radius:10px;padding:12px;margin-bottom:16px;font-size:.78rem;color:#a8b2d8;line-height:1.7}
-.warn-box{background:rgba(253,203,110,.08);border:1px solid rgba(253,203,110,.3);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:.75rem;color:#fdcb6e;line-height:1.6}
-.err-box{background:rgba(214,48,49,.1);border:1px solid rgba(214,48,49,.4);border-radius:10px;padding:12px;font-size:.82rem;color:#ff7675;line-height:1.6}
-.sec-title{font-size:.72rem;font-weight:700;color:#8892b0;text-transform:uppercase;letter-spacing:1px;margin:16px 0 10px;display:flex;align-items:center;gap:6px}
-.sec-title::after{content:'';flex:1;height:1px;background:#2a2a4a}
-.stock-card{background:#1a1a2e;border:1px solid #2a2a4a;border-radius:14px;padding:14px;margin-bottom:10px}
-.stock-card.buy{border-left:4px solid #00b894}
-.stock-card.sell{border-left:4px solid #d63031}
-.stock-card.watch{border-left:4px solid #fdcb6e}
-.stock-card.neutral{border-left:4px solid #636e72}
-.sc-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
-.sc-sym{font-size:1.05rem;font-weight:700;color:#fff;font-family:'IBM Plex Mono',monospace}
-.sc-name{font-size:.72rem;color:#8892b0;margin-top:2px}
-.sc-price{font-size:1.05rem;font-weight:700;color:#fff;text-align:right;font-family:'IBM Plex Mono',monospace}
-.sc-chg{font-size:.72rem;text-align:right;margin-top:2px;font-weight:600}
-.cup{color:#00b894}.cdn{color:#d63031}
+header[data-testid="stHeader"]{background:var(--bg0)!important}
+
+/* ── Header ── */
+.app-hdr{
+  background:linear-gradient(135deg,#1e1e26,#23202e,#1a2030);
+  border:1px solid rgba(124,106,240,.25);
+  border-radius:16px;padding:20px 18px 16px;
+  text-align:center;margin-bottom:18px;
+}
+.app-hdr h1{font-size:1.45rem;font-weight:700;color:#f0f0f5;letter-spacing:.3px}
+.app-hdr .sub{font-size:.78rem;color:var(--txt2);margin-top:5px}
+.ldot{display:inline-block;width:8px;height:8px;background:var(--grn);border-radius:50%;margin-right:5px;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(1.4)}}
+
+/* ── Login card ── */
+.login-card{
+  background:linear-gradient(135deg,var(--bg1),var(--bg2));
+  border:1px solid var(--bdr);border-radius:18px;
+  padding:22px 20px;margin:8px 0 18px;
+}
+.login-card h2{font-size:1.1rem;font-weight:700;color:#f0f0f5;margin-bottom:4px}
+.login-sub{font-size:.8rem;color:var(--txt2);margin-bottom:18px;line-height:1.7}
+
+/* ── Info / Warn / Err boxes ── */
+.info-box{
+  background:rgba(124,106,240,.07);border:1px solid rgba(124,106,240,.2);
+  border-radius:10px;padding:12px 14px;margin-bottom:14px;
+  font-size:.8rem;color:#c4cde8;line-height:1.75;
+}
+.warn-box{
+  background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.25);
+  border-radius:10px;padding:10px 14px;margin-bottom:12px;
+  font-size:.78rem;color:var(--yel);line-height:1.65;
+}
+.err-box{
+  background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.35);
+  border-radius:10px;padding:12px 14px;
+  font-size:.82rem;color:#fca5a5;line-height:1.65;
+}
+
+/* ── Section title ── */
+.sec-title{
+  font-size:.72rem;font-weight:700;color:var(--txt3);
+  text-transform:uppercase;letter-spacing:1.2px;
+  margin:18px 0 10px;display:flex;align-items:center;gap:8px;
+}
+.sec-title::after{content:'';flex:1;height:1px;background:var(--bdr)}
+
+/* ── Stock cards ── */
+.stock-card{
+  background:var(--bg1);border:1px solid var(--bdr);
+  border-radius:14px;padding:14px 16px;margin-bottom:10px;
+  transition:border-color .15s;
+}
+.stock-card:hover{border-color:var(--acc)}
+.stock-card.buy   {border-left:4px solid var(--grn)}
+.stock-card.sell  {border-left:4px solid var(--red)}
+.stock-card.watch {border-left:4px solid var(--yel)}
+.stock-card.neutral{border-left:4px solid var(--txt3)}
+
+.sc-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
+.sc-sym{font-size:1.05rem;font-weight:700;color:#f0f0f5;font-family:'IBM Plex Mono',monospace}
+.sc-name{font-size:.73rem;color:var(--txt2);margin-top:2px}
+.sc-price{font-size:1.05rem;font-weight:700;color:#f0f0f5;text-align:right;font-family:'IBM Plex Mono',monospace}
+.sc-chg{font-size:.73rem;text-align:right;margin-top:2px;font-weight:600}
+.cup{color:var(--grn)}.cdn{color:var(--red)}
+
 .sc-bars{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
-.sbi{text-align:center}
-.sbl{font-size:.62rem;color:#636e72;text-transform:uppercase}
-.sbv{font-size:.8rem;font-weight:600;color:#e2e8f0;font-family:'IBM Plex Mono',monospace}
-.sc-bot{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
-.sring{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700;font-family:'IBM Plex Mono',monospace;flex-shrink:0}
-.sh{background:rgba(0,184,148,.2);border:2px solid #00b894;color:#00b894}
-.sm{background:rgba(253,203,110,.2);border:2px solid #fdcb6e;color:#fdcb6e}
-.sl{background:rgba(214,48,49,.2);border:2px solid #d63031;color:#d63031}
-.chip{font-size:.75rem;font-weight:700;padding:4px 10px;border-radius:12px;display:inline-block}
-.chip-buy{background:rgba(0,184,148,.15);color:#00b894;border:1px solid rgba(0,184,148,.4)}
-.chip-sell{background:rgba(214,48,49,.15);color:#d63031;border:1px solid rgba(214,48,49,.4)}
-.chip-watch{background:rgba(253,203,110,.15);color:#fdcb6e;border:1px solid rgba(253,203,110,.4)}
-.chip-neutral{background:rgba(99,110,114,.15);color:#636e72;border:1px solid rgba(99,110,114,.4)}
-.trow{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-top:8px}
-.tgt{background:#12122a;border-radius:8px;padding:7px 4px;text-align:center}
-.tl{font-size:.6rem;color:#636e72;text-transform:uppercase;letter-spacing:.5px}
-.tv{font-size:.78rem;font-weight:700;font-family:'IBM Plex Mono',monospace;margin-top:2px}
-.te{color:#6c63ff}.t1{color:#00b894}.t2{color:#00cec9}.ts{color:#d63031}
-.da-hdr{background:linear-gradient(135deg,#12122a,#1a1035);border:1px solid rgba(108,99,255,.4);border-radius:14px;padding:16px;margin-bottom:14px}
-.da-sym{font-size:1.5rem;font-weight:700;color:#fff;font-family:'IBM Plex Mono',monospace}
+.sbi{text-align:center;background:var(--bg2);border-radius:8px;padding:6px 4px}
+.sbl{font-size:.62rem;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px}
+.sbv{font-size:.82rem;font-weight:600;color:var(--txt);font-family:'IBM Plex Mono',monospace;margin-top:2px}
+
+.sc-bot{display:flex;justify-content:space-between;align-items:center;margin-top:12px}
+.sring{
+  width:44px;height:44px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.88rem;font-weight:700;font-family:'IBM Plex Mono',monospace;flex-shrink:0;
+}
+.sh{background:rgba(52,211,153,.12);border:2px solid var(--grn);color:var(--grn)}
+.sm{background:rgba(251,191,36,.12);border:2px solid var(--yel);color:var(--yel)}
+.sl{background:rgba(248,113,113,.12);border:2px solid var(--red);color:var(--red)}
+
+/* ── Signal chips ── */
+.chip{font-size:.76rem;font-weight:700;padding:4px 11px;border-radius:12px;display:inline-block}
+.chip-buy    {background:rgba(52,211,153,.12);color:var(--grn);border:1px solid rgba(52,211,153,.3)}
+.chip-sell   {background:rgba(248,113,113,.12);color:var(--red);border:1px solid rgba(248,113,113,.3)}
+.chip-watch  {background:rgba(251,191,36,.12);color:var(--yel);border:1px solid rgba(251,191,36,.3)}
+.chip-neutral{background:rgba(107,114,128,.12);color:var(--txt3);border:1px solid rgba(107,114,128,.3)}
+
+/* ── Target/SL row ── */
+.trow{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-top:10px}
+.tgt{background:var(--bg2);border-radius:8px;padding:7px 4px;text-align:center}
+.tl{font-size:.62rem;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px}
+.tv{font-size:.8rem;font-weight:700;font-family:'IBM Plex Mono',monospace;margin-top:2px;color:var(--txt)}
+.te{color:var(--acc)}.t1{color:var(--grn)}.t2{color:var(--cyn)}.ts{color:var(--red)}
+
+/* ── Deep analysis header ── */
+.da-hdr{
+  background:linear-gradient(135deg,var(--bg1),#1e2030);
+  border:1px solid rgba(124,106,240,.3);border-radius:14px;
+  padding:18px 16px;margin-bottom:14px;
+}
+.da-sym{font-size:1.5rem;font-weight:700;color:#f0f0f5;font-family:'IBM Plex Mono',monospace}
 .da-price{font-size:1.8rem;font-weight:700;font-family:'IBM Plex Mono',monospace}
-.da-tag{display:inline-block;font-size:.68rem;font-weight:700;padding:3px 8px;border-radius:8px;margin-left:8px;vertical-align:middle}
-.tth{background:#1a3a1a;color:#00b894;border:1px solid rgba(0,184,148,.25)}
-.tus{background:#1a1a3a;color:#6c63ff;border:1px solid rgba(108,99,255,.25)}
-.tcn{background:#3a1a1a;color:#d63031;border:1px solid rgba(214,48,49,.25)}
+.da-tag{display:inline-block;font-size:.68rem;font-weight:700;padding:3px 9px;border-radius:8px;margin-left:8px;vertical-align:middle}
+.tth{background:rgba(52,211,153,.1);color:var(--grn);border:1px solid rgba(52,211,153,.2)}
+.tus{background:rgba(124,106,240,.1);color:var(--acc);border:1px solid rgba(124,106,240,.2)}
+.tcn{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.2)}
+
+/* ── Indicator grid ── */
 .ind-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
-.ibox{background:#1a1a2e;border:1px solid #2a2a4a;border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:2px}
-.ilabel{font-size:.65rem;color:#636e72;text-transform:uppercase;letter-spacing:.5px}
+.ibox{
+  background:var(--bg2);border:1px solid var(--bdr);
+  border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:3px;
+}
+.ilabel{font-size:.65rem;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px}
 .ival{font-size:.95rem;font-weight:700;font-family:'IBM Plex Mono',monospace}
-.ist{font-size:.65rem;margin-top:1px}
-.bull{color:#00b894}.bear{color:#d63031}.neut{color:#fdcb6e}
-.sig-item{border-radius:10px;padding:9px 12px;margin-bottom:6px;font-size:.8rem;line-height:1.5;border-left:3px solid}
-.sig-buy{background:rgba(0,184,148,.08);border-color:#00b894;color:#b2f5ea}
-.sig-sell{background:rgba(214,48,49,.08);border-color:#d63031;color:#fed7d7}
-.sig-neut{background:rgba(99,110,114,.08);border-color:#636e72;color:#cbd5e0}
+.ist{font-size:.66rem;margin-top:1px}
+.bull{color:var(--grn)}.bear{color:var(--red)}.neut{color:var(--yel)}
+
+/* ── Signal items ── */
+.sig-item{border-radius:10px;padding:9px 14px;margin-bottom:6px;font-size:.8rem;line-height:1.55;border-left:3px solid}
+.sig-buy {background:rgba(52,211,153,.06);border-color:var(--grn);color:#a7f3d0}
+.sig-sell{background:rgba(248,113,113,.06);border-color:var(--red);color:#fecaca}
+.sig-neut{background:rgba(107,114,128,.06);border-color:var(--txt3);color:var(--txt2)}
+
+/* ── Pivot row ── */
 .pvt-row{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:14px;-webkit-overflow-scrolling:touch}
-.pvt{flex-shrink:0;background:#1a1a2e;border-radius:10px;padding:8px 12px;text-align:center;min-width:72px;border:1px solid #2a2a4a}
-.pvtl{font-size:.6rem;color:#636e72;text-transform:uppercase}
+.pvt{flex-shrink:0;background:var(--bg2);border-radius:10px;padding:8px 13px;text-align:center;min-width:72px;border:1px solid var(--bdr)}
+.pvtl{font-size:.6rem;color:var(--txt3);text-transform:uppercase}
 .pvtv{font-size:.82rem;font-weight:700;font-family:'IBM Plex Mono',monospace;margin-top:2px}
+
+/* ── Fundamental grid ── */
 .fund-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
-.fbox{background:#1a1a2e;border:1px solid #2a2a4a;border-radius:10px;padding:10px}
-.flabel{font-size:.65rem;color:#636e72;text-transform:uppercase;letter-spacing:.5px}
-.fval{font-size:1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#e2e8f0;margin-top:2px}
-.fdesc{font-size:.65rem;color:#8892b0;margin-top:2px}
-.upd-bar{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#12122a;border-radius:10px;font-size:.7rem;color:#636e72;margin-bottom:12px}
-div.stButton>button{width:100%;background:linear-gradient(135deg,#6c63ff,#4f46e5);color:#fff;border:none;border-radius:12px;padding:14px;font-size:.95rem;font-weight:700;font-family:'Sarabun',sans-serif;box-shadow:0 4px 16px rgba(108,99,255,.35);transition:all .2s}
-div.stButton>button:hover{opacity:.9;transform:translateY(-1px)}
-div[data-testid="stTextInput"]>div>div>input{background:#1a1a2e!important;border:1px solid #2a2a4a!important;border-radius:10px!important;color:#e2e8f0!important}
-div[data-testid="stExpander"]{background:#1a1a2e;border:1px solid #2a2a4a!important;border-radius:12px!important;margin-bottom:8px}
-div[data-testid="stSidebar"]{background:#12122a!important}
+.fbox{background:var(--bg2);border:1px solid var(--bdr);border-radius:10px;padding:10px 12px}
+.flabel{font-size:.65rem;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px}
+.fval{font-size:1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:var(--txt);margin-top:2px}
+.fdesc{font-size:.65rem;color:var(--txt2);margin-top:2px}
+
+/* ── Update bar ── */
+.upd-bar{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:8px 14px;background:var(--bg2);border-radius:10px;
+  font-size:.72rem;color:var(--txt3);margin-bottom:12px;
+}
+
+/* ── Buttons ── */
+div.stButton>button{
+  width:100%;
+  background:linear-gradient(135deg,#6d60e0,#4e46c8);
+  color:#f0f0f5;border:none;border-radius:12px;
+  padding:13px;font-size:.95rem;font-weight:700;
+  font-family:'Sarabun',sans-serif;
+  box-shadow:0 3px 12px rgba(110,96,224,.3);
+  transition:all .18s;
+}
+div.stButton>button:hover{opacity:.88;transform:translateY(-1px)}
+
+/* ── Inputs ── */
+div[data-testid="stTextInput"]>div>div>input{
+  background:var(--bg2)!important;border:1px solid var(--bdr)!important;
+  border-radius:10px!important;color:var(--txt)!important;
+  font-size:.88rem!important;
+}
+div[data-testid="stTextInput"]>div>div>input::placeholder{color:var(--txt3)!important}
+div[data-testid="stTextInput"]>div>div>input:focus{border-color:var(--acc)!important}
+
+/* ── Expander ── */
+div[data-testid="stExpander"]{
+  background:var(--bg1);border:1px solid var(--bdr)!important;
+  border-radius:12px!important;margin-bottom:8px;
+}
+
+/* ── Sidebar ── */
+div[data-testid="stSidebar"]{background:var(--bg1)!important}
+
+/* ── Tabs ── */
+div[data-testid="stTabs"] button[role="tab"]{color:var(--txt2)!important;font-size:.85rem!important}
+div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{color:var(--acc)!important;border-bottom-color:var(--acc)!important}
+
+/* ── Slider ── */
+div[data-testid="stSlider"] div[data-testid="stTickBarMin"],
+div[data-testid="stSlider"] div[data-testid="stTickBarMax"]{color:var(--txt3)!important}
 </style>
 """, unsafe_allow_html=True)
 
@@ -411,9 +536,15 @@ def get_data(symbol, mkt_key):
     if use_live:
         try:
             df = fetch_settrade(symbol)
-            q = st.session_state.realtime_api.get_quote_symbol(symbol)
-            if q and "last" in q:
-                df.iloc[-1, df.columns.get_loc("close")] = float(q["last"])
+            # get_quote_symbol อาจไม่มีใน v1.x หรือ realtime_api = market_api
+            try:
+                rt = st.session_state.realtime_api
+                if rt is not None and hasattr(rt, "get_quote_symbol"):
+                    q = rt.get_quote_symbol(symbol)
+                    if q and "last" in q:
+                        df.iloc[-1, df.columns.get_loc("close")] = float(q["last"])
+            except Exception:
+                pass  # ราคา realtime ไม่ได้ก็ใช้ candlestick ปกติ
             info["source"] = "settrade"
             return df, info
         except Exception as e:
@@ -434,12 +565,36 @@ def get_data(symbol, mkt_key):
 # DEFAULT PARAMS
 # ---------------------------------------------------------------
 DEF = dict(
-    sma_s=20, sma_m=50, sma_l=200, ema_f=12, ema_s=26,
-    rsi_p=14, rsi_ob=70, rsi_os=30,
+    # ── Moving Averages ──────────────────────────────────────────
+    # SET: ใช้ 10/25/75 เพราะหุ้นไทยมี noise สูงกว่า US
+    # 10 วัน = momentum สั้น, 25 วัน = swing mid-term, 75 วัน = trend กลาง
+    sma_s=10, sma_m=25, sma_l=75, ema_f=12, ema_s=26,
+
+    # ── RSI ─────────────────────────────────────────────────────
+    # Period 14 มาตรฐาน; Oversold ปรับเป็น 35 (ไทยไม่ค่อยลงถึง 30)
+    # Overbought ปรับเป็น 68 (ไทยพีกก่อน 70 แล้วหมุน)
+    rsi_p=14, rsi_ob=68, rsi_os=35,
+
+    # ── MACD ────────────────────────────────────────────────────
+    # มาตรฐาน 12/26/9 ดีอยู่แล้ว
     macd_f=12, macd_s=26, macd_sg=9,
-    bb_p=20, bb_k=2, stoch_k=14, stoch_d=3,
+
+    # ── Bollinger Bands ─────────────────────────────────────────
+    # Period 20, Std 2.0 มาตรฐาน
+    bb_p=20, bb_k=2,
+
+    # ── Stochastic ──────────────────────────────────────────────
+    # %K=14, %D=3 มาตรฐาน
+    stoch_k=14, stoch_d=3,
+
+    # ── อื่นๆ ───────────────────────────────────────────────────
     atr_p=14, cci_p=20, wr_p=14, mfi_p=14, adx_p=14,
-    min_score=60, min_rr=1.5, min_adx=18,
+
+    # ── Filter ──────────────────────────────────────────────────
+    # ลด min_score จาก 60 → 55 เพื่อให้เห็นหุ้นมากขึ้น
+    # ลด min_rr จาก 1.5 → 1.2 เพราะ SET Spread กว้างกว่า US
+    # ลด min_adx จาก 18 → 15 เพื่อจับ early trend
+    min_score=55, min_rr=1.2, min_adx=15,
 )
 
 def get_params():
@@ -460,33 +615,88 @@ def render_header():
     )
 
 def render_params():
-    with st.expander("ตั้งค่า Parameters", expanded=False):
+    with st.expander("⚙️ ตั้งค่า Indicators & Filter", expanded=False):
+        # ── Preset buttons ──────────────────────────────────────
+        st.markdown(
+            '<div style="font-size:.72rem;font-weight:700;color:var(--txt3);text-transform:uppercase;'
+            'letter-spacing:1px;margin-bottom:8px;">Preset สำหรับหุ้นไทย SET</div>',
+            unsafe_allow_html=True
+        )
+        pc1, pc2, pc3 = st.columns(3)
+        with pc1:
+            if st.button("🔥 Swing Trade\n(2–10 วัน)", use_container_width=True, key="preset_swing"):
+                for k,v in [("p_sma_s",10),("p_sma_m",25),("p_sma_l",75),
+                             ("p_rsi_ob",68),("p_rsi_os",35),("p_min_score",55),("p_min_rr",1.2),("p_min_adx",15)]:
+                    st.session_state[k] = v
+                st.rerun()
+        with pc2:
+            if st.button("📈 Trend Follow\n(สัปดาห์–เดือน)", use_container_width=True, key="preset_trend"):
+                for k,v in [("p_sma_s",20),("p_sma_m",50),("p_sma_l",150),
+                             ("p_rsi_ob",70),("p_rsi_os",40),("p_min_score",60),("p_min_rr",1.5),("p_min_adx",22)]:
+                    st.session_state[k] = v
+                st.rerun()
+        with pc3:
+            if st.button("💎 Value+Tech\n(เน้นคุณภาพ)", use_container_width=True, key="preset_value"):
+                for k,v in [("p_sma_s",25),("p_sma_m",75),("p_sma_l",200),
+                             ("p_rsi_ob",65),("p_rsi_os",38),("p_min_score",62),("p_min_rr",1.8),("p_min_adx",20)]:
+                    st.session_state[k] = v
+                st.rerun()
+
+        st.markdown("---")
+        st.markdown(
+            '<div class="info-box" style="font-size:.75rem;">'
+            '<strong>💡 คำแนะนำ SET:</strong> '
+            'SMA 10/25/75 เหมาะกับหุ้นไทยมากกว่า 20/50/200 · '
+            'RSI Oversold ที่ 35 จับ bounce ได้ก่อน · '
+            'ADX &gt; 15 เริ่มมี trend · '
+            'ลด min_score → เห็นหุ้นมากขึ้น แต่ noise มากด้วย'
+            '</div>',
+            unsafe_allow_html=True
+        )
+
         c1, c2 = st.columns(2)
         with c1:
-            st.slider("SMA สั้น", 5, 50, DEF["sma_s"], key="p_sma_s")
-            st.slider("SMA กลาง", 20, 100, DEF["sma_m"], key="p_sma_m")
-            st.slider("SMA ยาว", 100, 300, DEF["sma_l"], key="p_sma_l")
+            st.markdown("**Moving Averages**")
+            st.slider("SMA สั้น (วัน)", 5, 30, DEF["sma_s"], key="p_sma_s",
+                      help="10 วัน = momentum สั้น / swing")
+            st.slider("SMA กลาง (วัน)", 15, 75, DEF["sma_m"], key="p_sma_m",
+                      help="25 วัน = แนวโน้ม mid-term")
+            st.slider("SMA ยาว (วัน)", 50, 250, DEF["sma_l"], key="p_sma_l",
+                      help="75 วัน = trend ระยะกลาง (200 ยาวเกินสำหรับ SET)")
+            st.markdown("**RSI**")
             st.slider("RSI Period", 7, 21, DEF["rsi_p"], key="p_rsi_p")
-            st.slider("RSI Overbought", 60, 85, DEF["rsi_ob"], key="p_rsi_ob")
-            st.slider("RSI Oversold", 15, 40, DEF["rsi_os"], key="p_rsi_os")
+            st.slider("RSI Overbought", 60, 82, DEF["rsi_ob"], key="p_rsi_ob",
+                      help="SET มักหมุนก่อนถึง 70 → แนะนำ 65–68")
+            st.slider("RSI Oversold", 20, 45, DEF["rsi_os"], key="p_rsi_os",
+                      help="35 จับ bounce ได้ก่อน 30")
+            st.markdown("**MACD**")
             st.slider("MACD Fast", 8, 20, DEF["macd_f"], key="p_macd_f")
             st.slider("MACD Slow", 20, 40, DEF["macd_s"], key="p_macd_s")
             st.slider("MACD Signal", 5, 15, DEF["macd_sg"], key="p_macd_sg")
         with c2:
+            st.markdown("**Bollinger Bands & Stoch**")
             st.slider("BB Period", 10, 30, DEF["bb_p"], key="p_bb_p")
             st.slider("BB Std Dev", 1, 3, DEF["bb_k"], key="p_bb_k")
             st.slider("Stoch %K", 5, 21, DEF["stoch_k"], key="p_stoch_k")
             st.slider("Stoch %D", 2, 7, DEF["stoch_d"], key="p_stoch_d")
+            st.markdown("**Other Indicators**")
             st.slider("ATR Period", 7, 21, DEF["atr_p"], key="p_atr_p")
             st.slider("CCI Period", 10, 30, DEF["cci_p"], key="p_cci_p")
             st.slider("Williams %R", 7, 21, DEF["wr_p"], key="p_wr_p")
             st.slider("MFI Period", 7, 21, DEF["mfi_p"], key="p_mfi_p")
             st.slider("ADX Period", 7, 21, DEF["adx_p"], key="p_adx_p")
-        c3, c4 = st.columns(2)
+
+        st.markdown("**ตัวกรองผลลัพธ์**")
+        c3, c4, c5 = st.columns(3)
         with c3:
-            st.slider("คะแนนขั้นต่ำ", 0, 100, DEF["min_score"], key="p_min_score")
+            st.slider("คะแนนขั้นต่ำ", 0, 100, DEF["min_score"], key="p_min_score",
+                      help="55 = เห็นมาก, 65 = เข้มงวด")
         with c4:
-            st.slider("R/R ขั้นต่ำ", 0.5, 5.0, float(DEF["min_rr"]), step=0.5, key="p_min_rr")
+            st.slider("R/R ขั้นต่ำ", 0.5, 5.0, float(DEF["min_rr"]), step=0.1, key="p_min_rr",
+                      help="1.2 เหมาะ SET / 1.5+ เข้มงวด")
+        with c5:
+            st.slider("ADX ขั้นต่ำ", 0, 40, DEF["min_adx"], key="p_min_adx",
+                      help="15 = early trend / 25 = strong trend")
 
 def render_deep(sym, mkt_key, I, S, info, yf_info=None):
     p = get_params()
@@ -861,7 +1071,23 @@ def view_login():
                         )
 
                     mkt_api = inv.MarketData()
-                    rt_api  = inv.RealtimeData()
+
+                    # settrade-v2 เปลี่ยนชื่อ method ระหว่าง version:
+                    # v0.x → RealtimeData()
+                    # v1.x+ → ไม่มี RealtimeData แล้ว ใช้ MarketData แทนทุกอย่าง
+                    rt_api = None
+                    for _rt_method in ["RealtimeData", "Streaming", "realtime"]:
+                        if hasattr(inv, _rt_method):
+                            try:
+                                rt_api = getattr(inv, _rt_method)()
+                            except Exception:
+                                pass
+                            break
+                    # ถ้าไม่มี RealtimeData เลย ให้ใช้ MarketData แทน (v1.x)
+                    if rt_api is None:
+                        rt_api = mkt_api
+                        if show_debug:
+                            st.info("Debug: ไม่พบ RealtimeData → ใช้ MarketData แทน (settrade-v2 v1.x+)")
 
                     # ทดสอบ connection ด้วย candlestick ของ PTT
                     try:
