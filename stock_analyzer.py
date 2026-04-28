@@ -548,10 +548,62 @@ def score_stock(I, p):
 # ---------------------------------------------------------------
 # DATA FETCH
 # ---------------------------------------------------------------
+def _get_settrade_current_price(symbol):
+    """
+    ดึงราคาปัจจุบัน (real-time) จาก settrade-v2
+    ลองหลาย method ตามที่ API version มี
+    คืนค่า (price, change_pct) หรือ (None, None) ถ้าไม่ได้
+    """
+    api = st.session_state.market_api
+    rt  = st.session_state.realtime_api  # อาจเป็น market_api เดียวกัน
+
+    # ── วิธีที่ 1: get_quote_symbol (v0.x realtime) ─────────
+    for obj in [rt, api]:
+        if obj is None:
+            continue
+        for method in ["get_quote_symbol", "get_quote", "quote"]:
+            if hasattr(obj, method):
+                try:
+                    q = getattr(obj, method)(symbol)
+                    if isinstance(q, dict):
+                        price = (q.get("last") or q.get("price") or
+                                 q.get("close") or q.get("Last") or
+                                 q.get("LastPrice"))
+                        chg   = (q.get("change_percent") or q.get("changepercent") or
+                                 q.get("pctChange") or 0)
+                        if price:
+                            return float(price), float(chg)
+                except Exception:
+                    pass
+
+    # ── วิธีที่ 2: get_candlestick interval=1m วันนี้ ────────
+    for obj in [api, rt]:
+        if obj is None:
+            continue
+        if hasattr(obj, "get_candlestick"):
+            try:
+                intraday = obj.get_candlestick(symbol, interval="1m", limit=5)
+                if intraday:
+                    df_i = pd.DataFrame(intraday)
+                    # หา close column
+                    for col in ["close","last","c","Close"]:
+                        if col in df_i.columns:
+                            price = float(df_i[col].iloc[-1])
+                            if price > 0:
+                                return price, None   # ไม่มี chg%
+            except Exception:
+                pass
+
+    # ── วิธีที่ 3: candlestick รายวัน วันล่าสุด (fallback) ─
+    # ใช้ค่าจาก df ที่ดึงมาแล้ว — ไม่ต้องดึงซ้ำ
+    return None, None
+
+
 def fetch_settrade(symbol, limit=200):
     raw = st.session_state.market_api.get_candlestick(symbol, interval="1d", limit=limit)
     df = pd.DataFrame(raw)
-    rename = {"last":"close","c":"close","o":"open","h":"high","l":"low","v":"volume","vol":"volume"}
+    rename = {"last":"close","c":"close","o":"open","h":"high","l":"low",
+              "v":"volume","vol":"volume"}
     df.rename(columns={col: rename.get(col, col) for col in df.columns}, inplace=True)
     if "close" not in df.columns:
         for alt in ["Close","CLOSE","price","Price"]:
@@ -559,58 +611,56 @@ def fetch_settrade(symbol, limit=200):
                 df["close"] = df[alt]; break
     for col, alt in [("open","close"),("high","close"),("low","close"),("volume",None)]:
         if col not in df.columns:
-            df[col] = df[alt] if alt else 1000000
-    df = df[["open","high","low","close","volume"]].apply(pd.to_numeric, errors="coerce").dropna()
+            df[col] = df[alt] if alt else 1_000_000
+    df = df[["open","high","low","close","volume"]].apply(
+        pd.to_numeric, errors="coerce").dropna()
     if len(df) < 30:
         raise ValueError("ข้อมูลน้อยเกินไป")
     return df
 
-def fetch_yfinance(symbol, period="1y"):
-    if not YF_OK:
-        raise RuntimeError("yfinance ไม่ได้ติดตั้ง")
-    ticker = yf.Ticker(symbol)
-    df = ticker.history(period=period)[["Open","High","Low","Close","Volume"]].copy()
-    df.columns = ["open","high","low","close","volume"]
-    return df.dropna(), ticker.info
-
-def fetch_mock(symbol, n=200):
-    np.random.seed(abs(hash(symbol)) % 99999)
-    base = np.random.uniform(8, 600)
-    c = [base]
-    for _ in range(n-1):
-        c.append(max(c[-1]*(1+np.random.normal(0,.014)), 0.5))
-    c = np.array(c)
-    h = c*np.random.uniform(1.001,1.025,n); lo = c*np.random.uniform(.975,.999,n)
-    v = np.random.uniform(3e5,8e6,n).astype(int)
-    return pd.DataFrame({"open":c,"high":h,"low":lo,"close":c,"volume":v})
 
 def get_data(symbol, mkt_key):
     info = {}
     use_live = st.session_state.logged_in and mkt_key == "SET"
+
     if use_live:
         try:
+            # ดึง historical (รายวัน) สำหรับคำนวณ indicator
             df = fetch_settrade(symbol)
-            # get_quote_symbol อาจไม่มีใน v1.x หรือ realtime_api = market_api
-            try:
-                rt = st.session_state.realtime_api
-                if rt is not None and hasattr(rt, "get_quote_symbol"):
-                    q = rt.get_quote_symbol(symbol)
-                    if q and "last" in q:
-                        df.iloc[-1, df.columns.get_loc("close")] = float(q["last"])
-            except Exception:
-                pass  # ราคา realtime ไม่ได้ก็ใช้ candlestick ปกติ
-            info["source"] = "settrade"
+
+            # ดึงราคาปัจจุบัน real-time แล้ว patch แถวสุดท้าย
+            rt_price, rt_chg = _get_settrade_current_price(symbol)
+            if rt_price and rt_price > 0:
+                prev_close = float(df["close"].iloc[-1])
+                # อัปเดตแถวล่าสุดด้วยราคาปัจจุบัน
+                df.iloc[-1, df.columns.get_loc("close")] = rt_price
+                # ปรับ high/low ของวันให้ครอบคลุมราคา realtime
+                df.iloc[-1, df.columns.get_loc("high")] = max(
+                    float(df["high"].iloc[-1]), rt_price)
+                df.iloc[-1, df.columns.get_loc("low")] = min(
+                    float(df["low"].iloc[-1]), rt_price)
+                info["rt_price"]  = rt_price
+                info["prev_close"] = prev_close
+                info["source"] = "settrade_live"
+            else:
+                info["source"] = "settrade_daily"
+
             return df, info
         except Exception as e:
             info["err"] = str(e)
+
+    # fallback: yfinance
     yf_sym = symbol + ".BK" if mkt_key == "SET" else symbol
     if YF_OK:
         try:
             df, yf_info = fetch_yfinance(yf_sym)
-            info["source"] = "yfinance"; info["yf"] = yf_info
+            info["source"] = "yfinance"
+            info["yf"] = yf_info
             return df, info
         except Exception:
             pass
+
+    # fallback: mock
     df = fetch_mock(symbol)
     info["source"] = "mock"
     return df, info
@@ -1184,7 +1234,13 @@ def render_deep(sym, mkt_key, I, S, info, yf_info=None):
     score_cls    = "sh" if sc >= 65 else "sm" if sc >= 45 else "sl"
     chip_cls     = "chip-" + S["cls"]
     chg_cls      = "cup" if I["chg"] >= 0 else "cdn"
-    src_lbl      = {"settrade":"Settrade Live","yfinance":"Yahoo Finance","mock":"Mock Data"}.get(info.get("source","mock"),"")
+    src_lbl = {
+        "settrade_live":  "🟢 Settrade Live (ราคาปัจจุบัน)",
+        "settrade_daily": "🟡 Settrade (ราคาปิดล่าสุด)",
+        "settrade":       "🟡 Settrade (ราคาปิดล่าสุด)",
+        "yfinance":       "🔵 Yahoo Finance",
+        "mock":           "⚫ Mock Data",
+    }.get(info.get("source", "mock"), "—")
     name_str     = dict(mkt.get("stocks",[])).get(sym, sym)
     rr_str       = "1:" + "{:.2f}".format(S["rr"])
     entry_str    = cur + "{:,.2f}".format(S["entry"])
@@ -1241,7 +1297,9 @@ def render_deep(sym, mkt_key, I, S, info, yf_info=None):
         '<span class="chip ' + chip_cls + '">' + S["rec"] + '</span>'
         '<div style="font-size:.7rem;color:#8892b0;margin-top:5px;">R/R <span style="color:#6c63ff;font-weight:700;">' + rr_str + '</span></div>'
         '</div></div>'
-        '<div style="margin-top:10px;font-size:.68rem;color:#636e72;">' + src_lbl + ' · ' + ts_now + '</div>'
+        '<div style="margin-top:10px;font-size:.68rem;color:#636e72;">' + src_lbl + ' · ' + ts_now
+        + (f' · ราคา RT: {info["rt_price"]:.2f}' if info.get("rt_price") else " · ราคาปิดล่าสุด (ไม่มี realtime)")
+        + '</div>'
         '</div>',
         unsafe_allow_html=True
     )
