@@ -18,6 +18,18 @@ except ImportError:
     ST_OK = False
 
 try:
+    import urllib.request, urllib.parse, json as _json
+    WEB_OK = True
+except ImportError:
+    WEB_OK = False
+
+try:
+    import urllib.request as _urllib_req
+    HTTP_OK = True
+except ImportError:
+    HTTP_OK = False
+
+try:
     import yfinance as yf
     YF_OK = True
 except ImportError:
@@ -243,6 +255,46 @@ div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{color:var(--a
 /* ── Slider ── */
 div[data-testid="stSlider"] div[data-testid="stTickBarMin"],
 div[data-testid="stSlider"] div[data-testid="stTickBarMax"]{color:var(--txt3)!important}
+
+/* ── AI Analysis panel ── */
+.ai-panel{
+  background:linear-gradient(135deg,#1c1c24,#1e2030);
+  border:1px solid rgba(124,106,240,.3);border-radius:16px;
+  padding:18px 16px;margin-bottom:14px;
+}
+.ai-panel-hdr{
+  display:flex;align-items:center;gap:10px;margin-bottom:12px;
+}
+.ai-badge{
+  font-size:.68rem;font-weight:700;padding:3px 9px;border-radius:8px;
+}
+.ai-claude{background:rgba(207,134,104,.15);color:#d4896a;border:1px solid rgba(207,134,104,.3)}
+.ai-gemini{background:rgba(66,133,244,.15);color:#6fa8f5;border:1px solid rgba(66,133,244,.3)}
+.ai-result{
+  font-size:.85rem;color:var(--txt);line-height:1.85;
+  white-space:pre-wrap;word-break:break-word;
+}
+.ai-result h3{font-size:.9rem;font-weight:700;color:#f0f0f5;margin:12px 0 5px}
+.ai-result strong{color:#f0f0f5}
+.ai-result ul{padding-left:16px;margin:4px 0}
+.ai-result li{margin-bottom:3px}
+.news-item{
+  background:var(--bg2);border:1px solid var(--bdr);border-radius:10px;
+  padding:10px 14px;margin-bottom:7px;
+}
+.news-title{font-size:.82rem;color:var(--txt);font-weight:600;line-height:1.4}
+.news-meta{font-size:.68rem;color:var(--txt3);margin-top:4px}
+.news-src{color:var(--acc);font-weight:600}
+.ai-provider-sel{
+  display:flex;gap:8px;margin-bottom:14px;
+}
+.ai-prov-btn{
+  flex:1;padding:10px 8px;border-radius:10px;border:1px solid var(--bdr);
+  background:var(--bg2);color:var(--txt2);font-size:.8rem;font-weight:600;
+  text-align:center;cursor:pointer;transition:all .15s;
+}
+.ai-prov-btn.active-claude{background:rgba(207,134,104,.1);border-color:rgba(207,134,104,.4);color:#d4896a}
+.ai-prov-btn.active-gemini{background:rgba(66,133,244,.1);border-color:rgba(66,133,244,.4);color:#6fa8f5}
 </style>
 """, unsafe_allow_html=True)
 
@@ -301,6 +353,10 @@ for k, v in [
     ("detail_sym", None), ("detail_mkt", None),
     ("prefill_id", ""), ("prefill_secret", ""),
     ("prefill_code", "SANDBOX"), ("prefill_broker", "SANDBOX"),
+    ("ai_provider", "claude"),          # "claude" | "gemini"
+    ("gemini_api_key", ""),
+    ("claude_api_key", ""),
+    ("ai_analysis_cache", {}),          # {sym: {"ts":..., "text":...}}
 ]:
     if k not in st.session_state:
         st.session_state[k] = v
@@ -601,9 +657,441 @@ def get_params():
     return {k: st.session_state.get("p_"+k, v) for k, v in DEF.items()}
 
 # ---------------------------------------------------------------
+# WEB SEARCH (DuckDuckGo Instant Answer API — ไม่ต้องการ key)
+# ---------------------------------------------------------------
+import urllib.request as _ureq
+import urllib.parse as _uparse
+import json as _json_mod
+import ssl as _ssl
+
+def _http_get(url, headers=None, timeout=12):
+    """ดึง URL แล้ว return text — raise ถ้าล้มเหลว"""
+    req = _ureq.Request(url, headers=headers or {
+        "User-Agent": "Mozilla/5.0 StockScannerBot/1.0"
+    })
+    ctx = _ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = _ssl.CERT_NONE
+    with _ureq.urlopen(req, timeout=timeout, context=ctx) as r:
+        return r.read().decode("utf-8", errors="replace")
+
+def search_stock_news(symbol, company_name="", market="SET"):
+    """
+    ดึงข่าวหุ้น 1 เดือน ผ่าน DuckDuckGo Instant + RSS feeds
+    คืน list ของ dict {title, url, source, date}
+    """
+    results = []
+    # ── คำค้นหา ──────────────────────────────────────────────
+    if market == "SET":
+        query = f"{symbol} {company_name} หุ้น ราคา ผลประกอบการ 2025"
+        query_en = f"{symbol}.BK stock Thailand SET 2025"
+    else:
+        query = f"{symbol} {company_name} stock news earnings 2025"
+        query_en = query
+
+    # ── DuckDuckGo Instant Answer API ────────────────────────
+    for q in [query, query_en]:
+        try:
+            url = "https://api.duckduckgo.com/?q=" + _uparse.quote(q) + "&format=json&no_redirect=1&no_html=1"
+            raw = _http_get(url, timeout=8)
+            data = _json_mod.loads(raw)
+            # RelatedTopics
+            for topic in data.get("RelatedTopics", [])[:5]:
+                text = topic.get("Text","")
+                href = topic.get("FirstURL","")
+                if text and len(text) > 20:
+                    results.append({
+                        "title": text[:120],
+                        "url": href,
+                        "source": "DuckDuckGo",
+                        "date": "",
+                    })
+            # Abstract
+            if data.get("AbstractText"):
+                results.append({
+                    "title": data["AbstractText"][:200],
+                    "url": data.get("AbstractURL",""),
+                    "source": data.get("AbstractSource","Web"),
+                    "date": "",
+                })
+        except Exception:
+            pass
+
+    # ── Google News RSS (ไม่ต้องการ key) ─────────────────────
+    rss_queries = [query, query_en] if market != "SET" else [query]
+    for q in rss_queries:
+        try:
+            rss_url = "https://news.google.com/rss/search?q=" + _uparse.quote(q) + "&hl=th&gl=TH&ceid=TH:th"
+            raw = _http_get(rss_url, timeout=8)
+            # parse RSS items ด้วย regex เล็กน้อย (ไม่ใช้ xml library)
+            import re as _re
+            items = _re.findall(r'<item>(.*?)</item>', raw, _re.DOTALL)
+            for item in items[:8]:
+                title_m = _re.search(r'<title><!\[CDATA\[(.*?)\]\]></title>', item)
+                link_m  = _re.search(r'<link>(.*?)</link>', item)
+                date_m  = _re.search(r'<pubDate>(.*?)</pubDate>', item)
+                src_m   = _re.search(r'<source[^>]*>(.*?)</source>', item)
+                if title_m:
+                    results.append({
+                        "title": title_m.group(1)[:150],
+                        "url":   link_m.group(1) if link_m else "",
+                        "source": src_m.group(1) if src_m else "Google News",
+                        "date":  date_m.group(1)[:16] if date_m else "",
+                    })
+        except Exception:
+            pass
+
+    # ── SET market specific: Investory / Finnomena RSS ────────
+    if market == "SET":
+        for rss_url in [
+            f"https://www.set.or.th/th/market/news-and-alert/newsdetails?symbol={symbol}",
+        ]:
+            pass  # SET ต้องการ browser — skip
+
+    # deduplicate
+    seen = set()
+    uniq = []
+    for r in results:
+        key = r["title"][:60]
+        if key not in seen:
+            seen.add(key); uniq.append(r)
+    return uniq[:12]
+
+
+def fetch_stock_context_text(symbol, company_name, market, I, S, mkt_key):
+    """
+    สร้าง context string สำหรับส่งให้ AI
+    รวม: indicator data + ข่าวจาก web
+    """
+    # ── ข้อมูล technical สรุป ──────────────────────────────
+    score = S["sc"]; rec = S["rec"]
+    tech_summary = f"""
+=== ข้อมูล Technical Analysis: {symbol} ({company_name}) ===
+ตลาด: {mkt_key} | คะแนน: {score}/100 | สัญญาณ: {rec}
+
+ราคา: {I['price']:.2f} | เปลี่ยนแปลงวันนี้: {I['chg']:+.2f}%
+เปลี่ยนแปลง 5 วัน: {I['chg_5d']:+.1f}% | 20 วัน: {I['chg_20d']:+.1f}%
+
+RSI(14): {I['rsi']:.1f} | MACD Histogram: {I['macd_h']:.4f}
+ADX: {I['adx']:.1f} | DI+: {I['dip']:.1f} | DI-: {I['dim']:.1f}
+BB%B: {I['bbp']:.2f} | Stoch %K: {I['sk']:.1f}
+Volume Ratio: {I['vol_r']:.1f}x | MFI: {I['mfi']:.1f}
+
+SMA สั้น: {I['sma_s']:.2f} | SMA กลาง: {I['sma_m']:.2f} | SMA ยาว: {I['sma_l']:.2f}
+ATR: {I['atr']:.2f} | VWAP: {I['vwap']:.2f}
+
+เป้าซื้อ: {S['entry']:.2f} | เป้า 1: {S['t1']:.2f} | เป้า 2: {S['t2']:.2f} | Stop Loss: {S['sl']:.2f}
+R/R: 1:{S['rr']:.2f}
+
+สัญญาณซื้อ: {', '.join(S['bs'][:4]) or 'ไม่มี'}
+สัญญาณขาย: {', '.join(S['ss'][:4]) or 'ไม่มี'}
+"""
+    # ── ดึงข่าว ────────────────────────────────────────────
+    news_items = []
+    try:
+        news_items = search_stock_news(symbol, company_name, mkt_key)
+    except Exception:
+        pass
+
+    news_text = "\n=== ข่าวล่าสุด 1 เดือน ===\n"
+    if news_items:
+        for i, n in enumerate(news_items[:8], 1):
+            news_text += f"{i}. [{n['source']}] {n['title']}\n"
+    else:
+        news_text += "(ไม่สามารถดึงข่าวได้ ใช้ข้อมูล technical เป็นหลัก)\n"
+
+    return tech_summary + news_text, news_items
+
+
+# ---------------------------------------------------------------
+# AI ANALYSIS — Claude API
+# ---------------------------------------------------------------
+def call_claude_api(prompt, api_key):
+    url = "https://api.anthropic.com/v1/messages"
+    payload = _json_mod.dumps({
+        "model": "claude-opus-4-5",
+        "max_tokens": 1200,
+        "messages": [{"role": "user", "content": prompt}]
+    }).encode("utf-8")
+    req = _ureq.Request(url, data=payload, headers={
+        "Content-Type": "application/json",
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+    })
+    ctx = _ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = _ssl.CERT_NONE
+    with _ureq.urlopen(req, timeout=30, context=ctx) as r:
+        data = _json_mod.loads(r.read().decode())
+    return data["content"][0]["text"]
+
+
+# ---------------------------------------------------------------
+# AI ANALYSIS — Gemini API
+# ---------------------------------------------------------------
+def call_gemini_api(prompt, api_key):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+    payload = _json_mod.dumps({
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"maxOutputTokens": 1200, "temperature": 0.4}
+    }).encode("utf-8")
+    req = _ureq.Request(url, data=payload, headers={"Content-Type": "application/json"})
+    ctx = _ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = _ssl.CERT_NONE
+    with _ureq.urlopen(req, timeout=30, context=ctx) as r:
+        data = _json_mod.loads(r.read().decode())
+    return data["candidates"][0]["content"]["parts"][0]["text"]
+
+
+def build_ai_prompt(symbol, company_name, market, context_text):
+    return f"""คุณคือนักวิเคราะห์หุ้นมืออาชีพ วิเคราะห์หุ้น {symbol} ({company_name}) ตลาด {market}
+
+{context_text}
+
+กรุณาวิเคราะห์เป็นภาษาไทย ครอบคลุม:
+
+### 📊 สรุปภาพรวม
+วิเคราะห์แนวโน้มราคาและ technical signals ที่สำคัญ
+
+### 📰 ผลกระทบจากข่าว
+สรุปข่าวที่เกี่ยวข้องและผลกระทบต่อราคาหุ้น
+
+### 🎯 จุดซื้อ-ขาย แนะนำ
+- จุดซื้อที่เหมาะสม
+- เป้าหมายราคา
+- จุด Stop Loss
+- Risk/Reward ratio
+
+### ⚠️ ความเสี่ยง
+ปัจจัยเสี่ยงสำคัญที่ควรระวัง
+
+### 💡 สรุปคำแนะนำ
+ประโยคสั้นๆ สำหรับนักลงทุน swing trade
+
+⚡ หมายเหตุ: นี่คือการวิเคราะห์เพื่อการศึกษาเท่านั้น ไม่ใช่คำแนะนำการลงทุน"""
+
+
+# ---------------------------------------------------------------
+# RENDER AI SETTINGS SIDEBAR (เรียกจาก login view)
+# ---------------------------------------------------------------
+def render_ai_settings_sidebar():
+    """Panel ตั้งค่า AI ใช้ใน sidebar ด้านซ้าย"""
+    with st.sidebar:
+        st.markdown("### 🤖 ตั้งค่า AI วิเคราะห์")
+        provider = st.radio(
+            "เลือก AI",
+            ["claude", "gemini"],
+            format_func=lambda x: "🟠 Claude (Anthropic)" if x == "claude" else "🔵 Gemini (Google)",
+            key="ai_provider",
+            horizontal=False,
+        )
+        st.markdown("---")
+        if provider == "claude":
+            st.text_input(
+                "Claude API Key",
+                value=st.session_state.get("claude_api_key",""),
+                type="password",
+                placeholder="sk-ant-api03-...",
+                key="claude_api_key",
+                help="รับได้ที่ console.anthropic.com",
+            )
+            st.markdown(
+                '<div style="font-size:.72rem;color:#9ca3af;margin-top:4px;">'
+                '🔗 <a href="https://console.anthropic.com" style="color:#d4896a;">console.anthropic.com</a>'
+                '</div>',
+                unsafe_allow_html=True
+            )
+        else:
+            st.text_input(
+                "Gemini API Key",
+                value=st.session_state.get("gemini_api_key",""),
+                type="password",
+                placeholder="AIza...",
+                key="gemini_api_key",
+                help="รับได้ที่ aistudio.google.com",
+            )
+            st.markdown(
+                '<div style="font-size:.72rem;color:#9ca3af;margin-top:4px;">'
+                '🔗 <a href="https://aistudio.google.com" style="color:#6fa8f5;">aistudio.google.com</a>'
+                '</div>',
+                unsafe_allow_html=True
+            )
+        st.markdown("---")
+        if st.button("🗑 ล้าง Cache AI", use_container_width=True):
+            st.session_state.ai_analysis_cache = {}
+            st.success("ล้าง cache แล้ว")
+
+
+# ---------------------------------------------------------------
+# RENDER AI ANALYSIS TAB
+# ---------------------------------------------------------------
+def render_ai_tab(sym, company_name, mkt_key, I, S):
+    """แสดง tab AI Analysis ใน render_deep"""
+
+    provider    = st.session_state.get("ai_provider", "claude")
+    claude_key  = st.session_state.get("claude_api_key", "").strip()
+    gemini_key  = st.session_state.get("gemini_api_key", "").strip()
+    cache_key   = f"{sym}_{mkt_key}_{provider}"
+    cached      = st.session_state.ai_analysis_cache.get(cache_key)
+
+    # ── Provider selector ────────────────────────────────────
+    st.markdown('<div class="sec-title">🤖 AI วิเคราะห์เจาะลึก</div>', unsafe_allow_html=True)
+
+    col_p1, col_p2 = st.columns(2)
+    with col_p1:
+        is_claude = provider == "claude"
+        if st.button(
+            "🟠 Claude (Anthropic)" + (" ✓" if is_claude else ""),
+            use_container_width=True,
+            type="primary" if is_claude else "secondary",
+            key="ai_sel_claude_" + sym,
+        ):
+            st.session_state.ai_provider = "claude"
+            st.rerun()
+    with col_p2:
+        is_gemini = provider == "gemini"
+        if st.button(
+            "🔵 Gemini (Google)" + (" ✓" if is_gemini else ""),
+            use_container_width=True,
+            type="primary" if is_gemini else "secondary",
+            key="ai_sel_gemini_" + sym,
+        ):
+            st.session_state.ai_provider = "gemini"
+            st.rerun()
+
+    # ── API Key input inline ──────────────────────────────────
+    st.markdown('<div class="sec-title">🔑 API Key</div>', unsafe_allow_html=True)
+    if provider == "claude":
+        claude_key = st.text_input(
+            "Claude API Key",
+            value=claude_key,
+            type="password",
+            placeholder="sk-ant-api03-... (รับที่ console.anthropic.com)",
+            key="claude_api_key_inline_" + sym,
+        )
+        st.session_state.claude_api_key = claude_key
+        api_key = claude_key
+        has_key = bool(api_key)
+        provider_label = "Claude Opus"
+        badge_cls = "ai-claude"
+    else:
+        gemini_key = st.text_input(
+            "Gemini API Key",
+            value=gemini_key,
+            type="password",
+            placeholder="AIza... (รับที่ aistudio.google.com — ฟรี)",
+            key="gemini_api_key_inline_" + sym,
+        )
+        st.session_state.gemini_api_key = gemini_key
+        api_key = gemini_key
+        has_key = bool(api_key)
+        provider_label = "Gemini 2.0 Flash"
+        badge_cls = "ai-gemini"
+
+    # ── Cached result ─────────────────────────────────────────
+    if cached:
+        age_min = (datetime.now() - cached["ts"]).seconds // 60
+        st.markdown(
+            f'<div style="font-size:.7rem;color:var(--txt3);margin-bottom:8px;">'
+            f'📋 ผลวิเคราะห์ล่าสุด · <span class="ai-badge {badge_cls}">{provider_label}</span>'
+            f' · {age_min} นาทีที่แล้ว</div>',
+            unsafe_allow_html=True
+        )
+        # แสดงข่าว
+        if cached.get("news"):
+            st.markdown('<div class="sec-title">📰 ข่าวที่ใช้วิเคราะห์</div>', unsafe_allow_html=True)
+            for n in cached["news"][:6]:
+                src_color = "#d4896a" if "google" in n["source"].lower() else "#6fa8f5"
+                st.markdown(
+                    f'<div class="news-item">'
+                    f'<div class="news-title">{n["title"]}</div>'
+                    f'<div class="news-meta"><span class="news-src" style="color:{src_color};">{n["source"]}</span>'
+                    + (f' · {n["date"]}' if n["date"] else '') + '</div>'
+                    '</div>',
+                    unsafe_allow_html=True
+                )
+        # แสดงผล AI
+        st.markdown('<div class="sec-title">🧠 ผลวิเคราะห์จาก AI</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="ai-panel"><div class="ai-result">' +
+            cached["text"].replace("\n", "<br>").replace("### ", "<h3>").replace("\n", "</h3>", 1) +
+            '</div></div>',
+            unsafe_allow_html=True
+        )
+        col_r1, col_r2 = st.columns(2)
+        with col_r1:
+            if st.button("🔄 วิเคราะห์ใหม่", use_container_width=True, key="ai_refresh_" + sym):
+                del st.session_state.ai_analysis_cache[cache_key]
+                st.rerun()
+        return
+
+    # ── No cache — show analyze button ───────────────────────
+    if not has_key:
+        st.markdown(
+            '<div class="warn-box">'
+            '🔑 กรุณาใส่ API Key ด้านบนก่อนวิเคราะห์<br>'
+            + ('Claude: <strong>console.anthropic.com</strong>' if provider == "claude"
+               else 'Gemini: <strong>aistudio.google.com</strong> (ฟรี!)')
+            + '</div>',
+            unsafe_allow_html=True
+        )
+        return
+
+    st.markdown(
+        '<div class="info-box">'
+        '🌐 ระบบจะ: ค้นหาข่าวล่าสุดจากอินเทอร์เน็ต → ส่งให้ AI วิเคราะห์รวมกับ Technical Indicators'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+    if st.button(
+        f"🚀 วิเคราะห์ {sym} ด้วย {provider_label}",
+        use_container_width=True,
+        key="ai_run_" + sym + "_" + provider,
+    ):
+        with st.spinner(f"🌐 กำลังค้นหาข่าว {sym}..."):
+            try:
+                context_text, news_items = fetch_stock_context_text(sym, company_name, mkt_key, I, S, mkt_key)
+            except Exception as e:
+                context_text = f"ข้อมูล Technical: ราคา {I['price']:.2f} RSI {I['rsi']:.1f} คะแนน {S['sc']}/100"
+                news_items = []
+
+        with st.spinner(f"🤖 {provider_label} กำลังวิเคราะห์..."):
+            try:
+                prompt = build_ai_prompt(sym, company_name, mkt_key, context_text)
+                if provider == "claude":
+                    result_text = call_claude_api(prompt, api_key)
+                else:
+                    result_text = call_gemini_api(prompt, api_key)
+
+                st.session_state.ai_analysis_cache[cache_key] = {
+                    "ts": datetime.now(),
+                    "text": result_text,
+                    "news": news_items,
+                }
+                st.rerun()
+            except Exception as e:
+                err = str(e)
+                if "401" in err or "invalid" in err.lower():
+                    hint = "❌ API Key ไม่ถูกต้อง กรุณาตรวจสอบ"
+                elif "429" in err:
+                    hint = "⏳ Rate limit — รอสักครู่แล้วลองใหม่"
+                elif "quota" in err.lower():
+                    hint = "💳 Quota หมด กรุณาตรวจสอบ billing"
+                else:
+                    hint = "🔌 เชื่อมต่อไม่ได้ — ตรวจสอบ internet / API key"
+                st.markdown(
+                    f'<div class="err-box"><strong>{hint}</strong><br>'
+                    f'<span style="font-size:.75rem;opacity:.7;">{err[:200]}</span></div>',
+                    unsafe_allow_html=True
+                )
+
+# ---------------------------------------------------------------
 # SHARED UI
 # ---------------------------------------------------------------
 def render_header():
+    render_ai_settings_sidebar()
     if st.session_state.logged_in:
         badge = '<span style="background:rgba(0,184,148,.15);border:1px solid rgba(0,184,148,.4);color:#00b894;font-size:.65rem;font-weight:700;padding:3px 8px;border-radius:8px;">Settrade Live</span>'
     else:
@@ -792,7 +1280,7 @@ def render_deep(sym, mkt_key, I, S, info, yf_info=None):
         unsafe_allow_html=True
     )
 
-    tab_tech, tab_target, tab_sig, tab_fund = st.tabs(["Technical","เป้าหมาย","สัญญาณ","พื้นฐาน"])
+    tab_tech, tab_target, tab_sig, tab_fund, tab_ai = st.tabs(["Technical","เป้าหมาย","สัญญาณ","พื้นฐาน","🤖 AI วิเคราะห์"])
 
     with tab_tech:
         def ib(lbl, val, is_b, is_s):
@@ -976,6 +1464,10 @@ def render_deep(sym, mkt_key, I, S, info, yf_info=None):
             st.markdown(html, unsafe_allow_html=True)
         else:
             st.info("ข้อมูลพื้นฐานใช้ได้กับหุ้น US/CN ผ่าน yfinance\nติดตั้ง: pip install yfinance")
+
+    with tab_ai:
+        company_name = dict(mkt.get("stocks",[])).get(sym, sym)
+        render_ai_tab(sym, company_name, mkt_key, I, S)
 
 # ---------------------------------------------------------------
 # VIEWS
