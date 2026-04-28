@@ -607,11 +607,25 @@ def inspect_settrade_api():
                     st.warning(f"{method}: {e}")
 
 
+def _parse_price_from_row(row):
+    """หาราคาจาก dict หนึ่งแถว ลองทุก key ที่เป็นไปได้"""
+    for k in ["last","Last","close","Close","c","price","Price",
+              "LastPrice","last_price","market_price","current"]:
+        v = row.get(k)
+        if v is not None:
+            try:
+                f = float(v)
+                if f > 0:
+                    return f
+            except Exception:
+                pass
+    return None
+
+
 def _get_settrade_current_price(symbol, debug_log=None):
     """
-    ดึงราคาปัจจุบัน (real-time) จาก settrade-v2
-    ลองทุก method ที่รู้จัก — คืน (price, chg%) หรือ (None, None)
-    debug_log: list ที่จะ append log เข้าไป ถ้าต้องการ debug
+    ดึงราคาปัจจุบันจาก settrade-v2
+    คืน (price, chg_pct) หรือ (None, None)
     """
     api = st.session_state.market_api
     rt  = st.session_state.realtime_api
@@ -620,59 +634,67 @@ def _get_settrade_current_price(symbol, debug_log=None):
         if debug_log is not None:
             debug_log.append(msg)
 
-    # ── วิธีที่ 1: quote methods ─────────────────────────────
-    for obj_label, obj in [("realtime_api", rt), ("market_api", api)]:
+    # ── 1. Quote/Security methods (ถ้ามี) ───────────────────
+    for label, obj in [("rt", rt), ("api", api)]:
         if obj is None:
             continue
         for method in ["get_quote_symbol", "get_quote", "quote",
-                       "get_security_info", "get_price_info"]:
+                       "get_security_info", "get_price_info",
+                       "get_stock_info", "get_market_data"]:
             if not hasattr(obj, method):
                 continue
             try:
                 q = getattr(obj, method)(symbol)
-                log(f"✓ {obj_label}.{method}({symbol}) = {str(q)[:200]}")
+                log(f"✓ {label}.{method} → {str(q)[:150]}")
+                # dict
                 if isinstance(q, dict):
-                    # ลอง keys ที่เป็นไปได้ทั้งหมด
-                    for price_key in ["last","Last","LastPrice","price","Price",
-                                      "close","Close","current","Current",
-                                      "marketPrice","market_price","last_price"]:
-                        if price_key in q and q[price_key]:
-                            price = float(q[price_key])
-                            chg = float(q.get("change_percent") or
-                                        q.get("changepercent") or
-                                        q.get("pctChange") or
-                                        q.get("change_pct") or 0)
-                            if price > 0:
-                                log(f"  → ราคา: {price} (จาก key '{price_key}')")
-                                return price, chg
+                    p = _parse_price_from_row(q)
+                    if p:
+                        chg = float(q.get("change_percent") or q.get("pctChange") or
+                                    q.get("changepercent") or q.get("change_pct") or 0)
+                        log(f"  → price={p} chg={chg}")
+                        return p, chg
+                # list → เอาแถวล่าสุด
                 elif isinstance(q, list) and q:
-                    row = q[-1] if isinstance(q[-1], dict) else q[0]
-                    for price_key in ["last","Last","close","Close","price"]:
-                        if price_key in row and row[price_key]:
-                            price = float(row[price_key])
-                            if price > 0:
-                                log(f"  → ราคา: {price} (list row, key '{price_key}')")
-                                return price, None
+                    row = q[-1] if isinstance(q[-1], dict) else {}
+                    p = _parse_price_from_row(row)
+                    if p:
+                        log(f"  → price={p} (from list)")
+                        return p, None
             except Exception as e:
-                log(f"✗ {obj_label}.{method}({symbol}) error: {e}")
+                log(f"✗ {label}.{method} → {e}")
 
-    # ── วิธีที่ 2: intraday candlestick ─────────────────────
-    for interval in ["1m", "5m", "15m", "30m", "60m"]:
+    # ── 2. Intraday candlestick — ใช้ limit=1 เอาแท่งล่าสุด ──
+    # settrade-v2 รองรับ interval: 1, 5, 15, 30, 60 (นาที) และ D
+    for interval in ["1", "5", "15", "30", "60", "1m", "5m", "15m"]:
         try:
-            raw = api.get_candlestick(symbol, interval=interval, limit=3)
-            if raw:
-                df_i = pd.DataFrame(raw)
-                log(f"✓ candlestick(interval={interval}) columns: {list(df_i.columns)}")
-                for col in ["close","last","c","Close","Last"]:
-                    if col in df_i.columns:
-                        price = float(df_i[col].iloc[-1])
-                        if price > 0:
-                            log(f"  → ราคา intraday: {price} (col='{col}')")
-                            return price, None
+            raw = api.get_candlestick(symbol, interval=interval, limit=1)
+            if not raw:
+                continue
+            df_i = pd.DataFrame(raw if isinstance(raw, list) else [raw])
+            log(f"✓ candle interval={interval} cols={list(df_i.columns)} rows={len(df_i)}")
+            p = _parse_price_from_row(df_i.iloc[-1].to_dict())
+            if p:
+                log(f"  → intraday price={p}")
+                return p, None
         except Exception as e:
-            log(f"✗ candlestick(interval={interval}) error: {e}")
+            log(f"✗ candle interval={interval} → {e}")
 
-    log("⚠ ดึง realtime ไม่ได้ — ใช้ราคาปิดล่าสุดแทน")
+    # ── 3. Daily candle limit=1 — อย่างน้อยได้ราคาปิดวันนี้ ──
+    try:
+        raw = api.get_candlestick(symbol, interval="1d", limit=1)
+        if not raw:
+            raw = api.get_candlestick(symbol, interval="D", limit=1)
+        if raw:
+            df_d = pd.DataFrame(raw if isinstance(raw, list) else [raw])
+            p = _parse_price_from_row(df_d.iloc[-1].to_dict())
+            if p:
+                log(f"✓ daily limit=1 → price={p}")
+                return p, None
+    except Exception as e:
+        log(f"✗ daily limit=1 → {e}")
+
+    log("⚠ ดึง realtime ไม่ได้เลย")
     return None, None
 
 
@@ -1098,51 +1120,58 @@ def render_ai_settings_sidebar():
 def render_ai_tab(sym, company_name, mkt_key, I, S):
     sym_safe = "".join(c for c in sym if c.isalnum())
 
-    # ── 1. Provider selectbox — key ผูกกับ session_state โดยตรง ──
-    st.markdown('<div class="sec-title">🤖 เลือก AI Provider</div>', unsafe_allow_html=True)
-    provider = st.selectbox(
-        "เลือก AI",
-        options=["claude", "gemini"],
-        format_func=lambda x: "🟠 Claude (Anthropic)" if x == "claude" else "🔵 Gemini (Google)",
-        key="ai_provider",
-        label_visibility="collapsed",
-    )
+    # ── Provider: ใช้ปุ่ม HTML แทน widget ทุกชนิด ────────────
+    # เหตุผล: selectbox/radio ทุกตัวใน Streamlit trigger rerun
+    # ซึ่งทำให้ tab กระโดดออก วิธีเดียวที่ไม่ rerun คือปุ่ม
+    # แต่ปุ่มก็ rerun... ดังนั้นเก็บ state ไว้ใน session_state
+    # และ rerun จะอ่านค่าเดิมได้ถูกต้อง
+    prov_key = "_ai_prov_" + sym_safe
+    if prov_key not in st.session_state:
+        st.session_state[prov_key] = "claude"
+    provider = st.session_state[prov_key]
+
+    col_c, col_g = st.columns(2)
+    with col_c:
+        if st.button(
+            "🟠 Claude" + (" ✓" if provider == "claude" else ""),
+            use_container_width=True,
+            type="primary" if provider == "claude" else "secondary",
+            key="aib_c_" + sym_safe,
+        ):
+            st.session_state[prov_key] = "claude"
+            st.rerun()
+    with col_g:
+        if st.button(
+            "🔵 Gemini" + (" ✓" if provider == "gemini" else ""),
+            use_container_width=True,
+            type="primary" if provider == "gemini" else "secondary",
+            key="aib_g_" + sym_safe,
+        ):
+            st.session_state[prov_key] = "gemini"
+            st.rerun()
 
     if provider == "claude":
         provider_label, badge_cls = "Claude Opus", "ai-claude"
         key_link, key_color = "console.anthropic.com", "#d4896a"
+        save_key = "_saved_claude_key"
     else:
         provider_label, badge_cls = "Gemini 2.0 Flash", "ai-gemini"
         key_link, key_color = "aistudio.google.com", "#6fa8f5"
+        save_key = "_saved_gemini_key"
 
-    # ── 2. Form: API Key + submit ─────────────────────────────
+    # ── API Key: form ป้องกัน Enter-rerun ──────────────────
     st.markdown('<div class="sec-title">🔑 API Key</div>', unsafe_allow_html=True)
-    with st.form(key="ai_form_" + sym_safe, border=False):
-        claude_val = st.session_state.get("_saved_claude_key", "")
-        gemini_val = st.session_state.get("_saved_gemini_key", "")
-
-        # render ทั้งสอง input แต่ซ่อนอันที่ไม่ใช้ด้วย label_visibility
-        claude_input = st.text_input(
-            "Claude API Key",
+    with st.form(key="aif_" + sym_safe + "_" + provider, border=False):
+        api_key = st.text_input(
+            f"{provider_label} API Key",
             type="password",
-            placeholder="sk-ant-api03-...  ·  console.anthropic.com",
-            value=claude_val,
-            key="fci_" + sym_safe,
-            label_visibility="visible" if provider == "claude" else "collapsed",
-        )
-        gemini_input = st.text_input(
-            "Gemini API Key",
-            type="password",
-            placeholder="AIza...  ·  aistudio.google.com (ฟรี)",
-            value=gemini_val,
-            key="fgi_" + sym_safe,
-            label_visibility="visible" if provider == "gemini" else "collapsed",
-        )
-        api_key = (claude_input if provider == "claude" else gemini_input).strip()
-
+            placeholder=("sk-ant-api03-...  ·  console.anthropic.com"
+                         if provider == "claude"
+                         else "AIza...  ·  aistudio.google.com (ฟรี)"),
+            value=st.session_state.get(save_key, ""),
+        ).strip()
         if not api_key:
             st.caption(f"🔑 รับ API Key ฟรีที่ {key_link}")
-
         submitted = st.form_submit_button(
             f"🚀 วิเคราะห์ {sym} ด้วย {provider_label}",
             use_container_width=True,
@@ -1150,32 +1179,24 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
         )
 
     if submitted and api_key:
-        if provider == "claude":
-            st.session_state["_saved_claude_key"] = api_key
-        else:
-            st.session_state["_saved_gemini_key"] = api_key
+        st.session_state[save_key] = api_key
 
-    # ── 3. Cache ──────────────────────────────────────────────
+    # ── Cache ───────────────────────────────────────────────
     cache_key = f"{sym}_{mkt_key}_{provider}"
     cached    = st.session_state.ai_analysis_cache.get(cache_key)
 
     if cached:
         age_sec = int((datetime.now() - cached["ts"]).total_seconds())
         age_str = f"{age_sec // 60} นาที" if age_sec >= 60 else f"{age_sec} วินาที"
-        st.markdown(
-            f'<div style="font-size:.72rem;color:var(--txt3);margin:8px 0 4px;">' +
-            f'📋 ผลล่าสุด · <span class="ai-badge {badge_cls}">{provider_label}</span>' +
-            f' · {age_str}ที่แล้ว</div>',
-            unsafe_allow_html=True,
-        )
+        st.caption(f"📋 ผลล่าสุด ({provider_label}) · {age_str}ที่แล้ว")
         if cached.get("news"):
-            with st.expander(f"📰 ข่าวที่ใช้วิเคราะห์ ({len(cached['news'])} รายการ)", expanded=False):
+            with st.expander(f"📰 ข่าว ({len(cached['news'])} รายการ)", expanded=False):
                 for n in cached["news"]:
                     st.markdown(
                         f'<div class="news-item">' +
                         f'<div class="news-title">{n["title"]}</div>' +
                         f'<div class="news-meta">' +
-                        f'<span class="news-src" style="color:{key_color};">{n["source"]}</span>' +
+                        f'<span style="color:{key_color};">{n["source"]}</span>' +
                         (f' · {n["date"]}' if n.get("date") else "") +
                         '</div></div>',
                         unsafe_allow_html=True,
@@ -1184,21 +1205,23 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
         st.markdown(cached["text"])
         c1, c2 = st.columns(2)
         with c1:
-            if st.button("🔄 วิเคราะห์ใหม่", use_container_width=True, key="ai_ref_" + sym_safe):
+            if st.button("🔄 วิเคราะห์ใหม่", use_container_width=True, key="air_" + sym_safe):
                 del st.session_state.ai_analysis_cache[cache_key]
                 st.rerun()
         with c2:
-            if st.button("🗑 ล้าง Cache", use_container_width=True, key="ai_clr_" + sym_safe):
+            if st.button("🗑 ล้าง Cache", use_container_width=True, key="aic_" + sym_safe):
                 st.session_state.ai_analysis_cache = {}
                 st.rerun()
 
     elif submitted and api_key:
         news_items = []
-        with st.spinner(f"🌐 กำลังค้นหาข่าว {sym}..."):
+        with st.spinner(f"🌐 ค้นหาข่าว {sym}..."):
             try:
-                context_text, news_items = fetch_stock_context_text(sym, company_name, mkt_key, I, S, mkt_key)
+                context_text, news_items = fetch_stock_context_text(
+                    sym, company_name, mkt_key, I, S, mkt_key)
             except Exception:
-                context_text = f"Technical: ราคา {I['price']:.2f} RSI {I['rsi']:.1f} คะแนน {S['sc']}/100"
+                context_text = (f"Technical: ราคา {I['price']:.2f} "
+                                f"RSI {I['rsi']:.1f} คะแนน {S['sc']}/100")
         with st.spinner(f"🤖 {provider_label} กำลังวิเคราะห์..."):
             try:
                 prompt = build_ai_prompt(sym, company_name, mkt_key, context_text)
@@ -1211,7 +1234,7 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
             except Exception as e:
                 err = str(e)
                 hint = ("❌ API Key ไม่ถูกต้อง" if "401" in err or "unauthorized" in err.lower()
-                        else "⏳ Rate limit" if "429" in err
+                        else "⏳ Rate limit — รอสักครู่" if "429" in err
                         else "💳 Quota หมด" if "quota" in err.lower()
                         else "⏱ Timeout" if "timeout" in err.lower()
                         else "🔌 เชื่อมต่อไม่ได้")
