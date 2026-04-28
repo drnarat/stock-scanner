@@ -160,3 +160,25 @@ if st.session_state.view == "login":
 elif st.session_state.view == "scan":
     # เรียกฟังก์ชันสแกนเดิมของคุณ
     st.write("Login สำเร็จ - เข้าสู่หน้าสแกน")
+
+# ---------------------------------------------------------------
+# ROUTER (แก้ไขเพื่อให้เรียกฟังก์ชันแสดงผลเดิมของคุณ)
+# ---------------------------------------------------------------
+view = st.session_state.view
+
+if view == "login":
+    view_login()
+elif view == "scan":
+    view_scan()  # เรียกหน้าสแกนเดิมของคุณ
+elif view == "manual":
+    view_manual() # เรียกหน้าวิเคราะห์รายตัวเดิมของคุณ
+elif view == "detail":
+    view_detail() # เรียกหน้าเจาะลึกเดิมของคุณ
+
+# ส่วนท้ายสุด (Footer)
+st.markdown(
+    '<div style="text-align:center;padding:20px 0 10px;color:#2a2a4a;font-size:.68rem;line-height:1.8;">'
+    'ใช้เพื่อการศึกษาเท่านั้น · ไม่ใช่คำแนะนำการลงทุน'
+    '</div>',
+    unsafe_allow_html=True
+)
