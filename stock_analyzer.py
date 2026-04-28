@@ -548,54 +548,131 @@ def score_stock(I, p):
 # ---------------------------------------------------------------
 # DATA FETCH
 # ---------------------------------------------------------------
-def _get_settrade_current_price(symbol):
+def inspect_settrade_api():
     """
-    ดึงราคาปัจจุบัน (real-time) จาก settrade-v2
-    ลองหลาย method ตามที่ API version มี
-    คืนค่า (price, change_pct) หรือ (None, None) ถ้าไม่ได้
+    แสดง raw info ของ settrade-v2 API:
+    - methods ทั้งหมดที่ Investor มี
+    - raw response จาก candlestick และ quote method ต่างๆ
+    ใช้สำหรับ debug หา field ราคาปัจจุบัน
     """
     api = st.session_state.market_api
-    rt  = st.session_state.realtime_api  # อาจเป็น market_api เดียวกัน
+    rt  = st.session_state.realtime_api
 
-    # ── วิธีที่ 1: get_quote_symbol (v0.x realtime) ─────────
-    for obj in [rt, api]:
+    st.markdown("### 🔬 Settrade API Inspector")
+
+    # ── Methods ที่ Investor มี ───────────────────────────────
+    st.markdown("**📋 Methods บน market_api (MarketData):**")
+    methods = [m for m in dir(api) if not m.startswith("_")]
+    st.code("\n".join(methods))
+
+    if rt is not api and rt is not None:
+        st.markdown("**📋 Methods บน realtime_api:**")
+        rt_methods = [m for m in dir(rt) if not m.startswith("_")]
+        st.code("\n".join(rt_methods))
+
+    sym_test = "PTT"
+    st.markdown(f"---\n**🧪 ทดสอบกับ {sym_test}:**")
+
+    # ── Raw candlestick daily ────────────────────────────────
+    st.markdown("**`get_candlestick(interval='1d', limit=3)` → raw response:**")
+    try:
+        raw = api.get_candlestick(sym_test, interval="1d", limit=3)
+        st.json(raw if isinstance(raw, (list, dict)) else str(raw))
+    except Exception as e:
+        st.error(str(e))
+
+    # ── Raw candlestick intraday ─────────────────────────────
+    for interval in ["1m", "5m", "15m"]:
+        st.markdown(f"**`get_candlestick(interval='{interval}', limit=3)`:**")
+        try:
+            raw = api.get_candlestick(sym_test, interval=interval, limit=3)
+            st.json(raw if isinstance(raw, (list, dict)) else str(raw))
+            break  # แสดงแค่อันแรกที่สำเร็จ
+        except Exception as e:
+            st.warning(f"interval={interval}: {e}")
+
+    # ── ลอง quote methods ทุกแบบ ────────────────────────────
+    for obj_name, obj in [("market_api", api), ("realtime_api", rt)]:
         if obj is None:
             continue
-        for method in ["get_quote_symbol", "get_quote", "quote"]:
+        for method in ["get_quote_symbol", "get_quote", "quote",
+                       "get_market_status", "get_security_info",
+                       "get_price_info", "get_stock_info"]:
             if hasattr(obj, method):
+                st.markdown(f"**`{obj_name}.{method}('{sym_test}')`:**")
                 try:
-                    q = getattr(obj, method)(symbol)
-                    if isinstance(q, dict):
-                        price = (q.get("last") or q.get("price") or
-                                 q.get("close") or q.get("Last") or
-                                 q.get("LastPrice"))
-                        chg   = (q.get("change_percent") or q.get("changepercent") or
-                                 q.get("pctChange") or 0)
-                        if price:
-                            return float(price), float(chg)
-                except Exception:
-                    pass
+                    result = getattr(obj, method)(sym_test)
+                    st.json(result if isinstance(result, (list, dict)) else str(result))
+                except Exception as e:
+                    st.warning(f"{method}: {e}")
 
-    # ── วิธีที่ 2: get_candlestick interval=1m วันนี้ ────────
-    for obj in [api, rt]:
+
+def _get_settrade_current_price(symbol, debug_log=None):
+    """
+    ดึงราคาปัจจุบัน (real-time) จาก settrade-v2
+    ลองทุก method ที่รู้จัก — คืน (price, chg%) หรือ (None, None)
+    debug_log: list ที่จะ append log เข้าไป ถ้าต้องการ debug
+    """
+    api = st.session_state.market_api
+    rt  = st.session_state.realtime_api
+
+    def log(msg):
+        if debug_log is not None:
+            debug_log.append(msg)
+
+    # ── วิธีที่ 1: quote methods ─────────────────────────────
+    for obj_label, obj in [("realtime_api", rt), ("market_api", api)]:
         if obj is None:
             continue
-        if hasattr(obj, "get_candlestick"):
+        for method in ["get_quote_symbol", "get_quote", "quote",
+                       "get_security_info", "get_price_info"]:
+            if not hasattr(obj, method):
+                continue
             try:
-                intraday = obj.get_candlestick(symbol, interval="1m", limit=5)
-                if intraday:
-                    df_i = pd.DataFrame(intraday)
-                    # หา close column
-                    for col in ["close","last","c","Close"]:
-                        if col in df_i.columns:
-                            price = float(df_i[col].iloc[-1])
+                q = getattr(obj, method)(symbol)
+                log(f"✓ {obj_label}.{method}({symbol}) = {str(q)[:200]}")
+                if isinstance(q, dict):
+                    # ลอง keys ที่เป็นไปได้ทั้งหมด
+                    for price_key in ["last","Last","LastPrice","price","Price",
+                                      "close","Close","current","Current",
+                                      "marketPrice","market_price","last_price"]:
+                        if price_key in q and q[price_key]:
+                            price = float(q[price_key])
+                            chg = float(q.get("change_percent") or
+                                        q.get("changepercent") or
+                                        q.get("pctChange") or
+                                        q.get("change_pct") or 0)
                             if price > 0:
-                                return price, None   # ไม่มี chg%
-            except Exception:
-                pass
+                                log(f"  → ราคา: {price} (จาก key '{price_key}')")
+                                return price, chg
+                elif isinstance(q, list) and q:
+                    row = q[-1] if isinstance(q[-1], dict) else q[0]
+                    for price_key in ["last","Last","close","Close","price"]:
+                        if price_key in row and row[price_key]:
+                            price = float(row[price_key])
+                            if price > 0:
+                                log(f"  → ราคา: {price} (list row, key '{price_key}')")
+                                return price, None
+            except Exception as e:
+                log(f"✗ {obj_label}.{method}({symbol}) error: {e}")
 
-    # ── วิธีที่ 3: candlestick รายวัน วันล่าสุด (fallback) ─
-    # ใช้ค่าจาก df ที่ดึงมาแล้ว — ไม่ต้องดึงซ้ำ
+    # ── วิธีที่ 2: intraday candlestick ─────────────────────
+    for interval in ["1m", "5m", "15m", "30m", "60m"]:
+        try:
+            raw = api.get_candlestick(symbol, interval=interval, limit=3)
+            if raw:
+                df_i = pd.DataFrame(raw)
+                log(f"✓ candlestick(interval={interval}) columns: {list(df_i.columns)}")
+                for col in ["close","last","c","Close","Last"]:
+                    if col in df_i.columns:
+                        price = float(df_i[col].iloc[-1])
+                        if price > 0:
+                            log(f"  → ราคา intraday: {price} (col='{col}')")
+                            return price, None
+        except Exception as e:
+            log(f"✗ candlestick(interval={interval}) error: {e}")
+
+    log("⚠ ดึง realtime ไม่ได้ — ใช้ราคาปิดล่าสุดแทน")
     return None, None
 
 
@@ -648,7 +725,9 @@ def get_data(symbol, mkt_key):
     if use_live:
         try:
             df = fetch_settrade(symbol)
-            rt_price, rt_chg = _get_settrade_current_price(symbol)
+            debug_log = []
+            rt_price, rt_chg = _get_settrade_current_price(symbol, debug_log=debug_log)
+            info["debug_log"] = debug_log
             if rt_price and rt_price > 0:
                 prev_close = float(df["close"].iloc[-1])
                 df.iloc[-1, df.columns.get_loc("close")] = rt_price
@@ -980,13 +1059,12 @@ def build_ai_prompt(symbol, company_name, market, context_text):
 # RENDER AI SETTINGS SIDEBAR (เรียกจาก login view)
 # ---------------------------------------------------------------
 def render_ai_settings_sidebar():
-    """Sidebar แสดงแค่ข้อมูล AI สถานะ — key ใส่ใน tab โดยตรง"""
+    """Sidebar — สถานะ AI + API Inspector"""
     with st.sidebar:
         st.markdown("### 🤖 AI วิเคราะห์หุ้น")
         provider = st.session_state.get("ai_provider", "claude")
         has_claude = bool(st.session_state.get("aikey_claude", "").strip())
         has_gemini = bool(st.session_state.get("aikey_gemini", "").strip())
-
         st.markdown(
             f'<div style="font-size:.78rem;color:var(--txt2);line-height:1.9;">'
             f'🟠 Claude: <strong style="color:{"var(--grn)" if has_claude else "var(--red)"};">'
@@ -1000,13 +1078,18 @@ def render_ai_settings_sidebar():
         )
         st.markdown("---")
         cache_count = len(st.session_state.get("ai_analysis_cache", {}))
-        st.markdown(
-            f'<div style="font-size:.75rem;color:var(--txt3);">Cache: {cache_count} รายการ</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown(f'<div style="font-size:.75rem;color:var(--txt3);">Cache: {cache_count} รายการ</div>', unsafe_allow_html=True)
         if st.button("🗑 ล้าง Cache AI", use_container_width=True, key="sb_clear_cache"):
             st.session_state.ai_analysis_cache = {}
             st.rerun()
+
+        # ── API Inspector (แสดงเมื่อ login แล้ว) ────────────
+        if st.session_state.get("logged_in"):
+            st.markdown("---")
+            st.markdown("### 🔬 Settrade Debug")
+            if st.button("🔬 เปิด API Inspector", use_container_width=True, key="sb_inspector"):
+                st.session_state["show_inspector"] = not st.session_state.get("show_inspector", False)
+                st.rerun()
 
 
 # ---------------------------------------------------------------
@@ -1185,6 +1268,14 @@ def render_header():
         unsafe_allow_html=True
     )
 
+    # ── API Inspector panel ───────────────────────────────────
+    if st.session_state.get("show_inspector") and st.session_state.get("logged_in"):
+        with st.expander("🔬 Settrade API Inspector — ดู raw response เพื่อหา field ราคา", expanded=True):
+            inspect_settrade_api()
+            if st.button("❌ ปิด Inspector", key="close_inspector"):
+                st.session_state["show_inspector"] = False
+                st.rerun()
+
 def render_params():
     with st.expander("⚙️ ตั้งค่า Indicators & Filter", expanded=False):
         # ── Preset buttons ──────────────────────────────────────
@@ -1359,6 +1450,24 @@ def render_deep(sym, mkt_key, I, S, info, yf_info=None):
         '</div>',
         unsafe_allow_html=True
     )
+
+    # ── Debug log expander (แสดงเมื่อ settrade_daily = ดึง realtime ไม่ได้) ──
+    if info.get("source") == "settrade_daily" and info.get("debug_log"):
+        with st.expander("🔍 Debug: ทำไมราคาไม่ใช่ realtime?", expanded=False):
+            st.markdown(
+                '<div class="warn-box">'
+                '⚠ ดึงราคา realtime ไม่ได้ — แสดงราคาปิดล่าสุดแทน<br>'
+                'กด <strong>🔬 API Inspector</strong> ใน sidebar เพื่อดูว่า settrade-v2 version นี้ใช้ method ไหน'
+                '</div>',
+                unsafe_allow_html=True
+            )
+            for line in info["debug_log"]:
+                color = "#34d399" if line.startswith("✓") else "#f87171" if line.startswith("✗") else "#fbbf24"
+                st.markdown(
+                    f'<div style="font-size:.75rem;font-family:monospace;color:{color};'
+                    f'padding:2px 0;border-bottom:1px solid #2a2a32;">{line}</div>',
+                    unsafe_allow_html=True
+                )
 
     # OHLCV
     st.markdown(
