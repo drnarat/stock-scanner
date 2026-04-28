@@ -353,10 +353,10 @@ for k, v in [
     ("detail_sym", None), ("detail_mkt", None),
     ("prefill_id", ""), ("prefill_secret", ""),
     ("prefill_code", "SANDBOX"), ("prefill_broker", "SANDBOX"),
-    ("ai_provider", "claude"),          # "claude" | "gemini"
-    ("gemini_api_key", ""),
-    ("claude_api_key", ""),
-    ("ai_analysis_cache", {}),          # {sym: {"ts":..., "text":...}}
+    ("ai_provider", "claude"),
+    ("_claude_key_store", ""),   # storage แยกจาก widget key
+    ("_gemini_key_store", ""),
+    ("ai_analysis_cache", {}),
 ]:
     if k not in st.session_state:
         st.session_state[k] = v
@@ -876,24 +876,33 @@ def build_ai_prompt(symbol, company_name, market, context_text):
 # RENDER AI SETTINGS SIDEBAR (เรียกจาก login view)
 # ---------------------------------------------------------------
 def render_ai_settings_sidebar():
-    """Panel ตั้งค่า AI ใช้ใน sidebar ด้านซ้าย"""
+    """Panel ตั้งค่า AI ใน sidebar — ใช้ _store keys แยกจาก widget keys"""
     with st.sidebar:
         st.markdown("### 🤖 ตั้งค่า AI วิเคราะห์")
-        provider = st.radio(
+
+        # provider radio — key ต่างหาก ไม่ชนกับ inline tab
+        st.radio(
             "เลือก AI",
             ["claude", "gemini"],
             format_func=lambda x: "🟠 Claude (Anthropic)" if x == "claude" else "🔵 Gemini (Google)",
             key="ai_provider",
             horizontal=False,
         )
+        provider = st.session_state.ai_provider
         st.markdown("---")
+
         if provider == "claude":
+            # widget key = "sb_claude_key" (ไม่ชนกับ inline)
+            # เมื่อ user พิมพ์ → on_change sync ลง _store
+            def _sync_claude():
+                st.session_state["_claude_key_store"] = st.session_state["sb_claude_key"]
             st.text_input(
                 "Claude API Key",
-                value=st.session_state.get("claude_api_key",""),
+                value=st.session_state.get("_claude_key_store", ""),
                 type="password",
                 placeholder="sk-ant-api03-...",
-                key="claude_api_key",
+                key="sb_claude_key",
+                on_change=_sync_claude,
                 help="รับได้ที่ console.anthropic.com",
             )
             st.markdown(
@@ -903,12 +912,15 @@ def render_ai_settings_sidebar():
                 unsafe_allow_html=True
             )
         else:
+            def _sync_gemini():
+                st.session_state["_gemini_key_store"] = st.session_state["sb_gemini_key"]
             st.text_input(
                 "Gemini API Key",
-                value=st.session_state.get("gemini_api_key",""),
+                value=st.session_state.get("_gemini_key_store", ""),
                 type="password",
                 placeholder="AIza...",
-                key="gemini_api_key",
+                key="sb_gemini_key",
+                on_change=_sync_gemini,
                 help="รับได้ที่ aistudio.google.com",
             )
             st.markdown(
@@ -918,7 +930,7 @@ def render_ai_settings_sidebar():
                 unsafe_allow_html=True
             )
         st.markdown("---")
-        if st.button("🗑 ล้าง Cache AI", use_container_width=True):
+        if st.button("🗑 ล้าง Cache AI", use_container_width=True, key="sb_clear_cache"):
             st.session_state.ai_analysis_cache = {}
             st.success("ล้าง cache แล้ว")
 
@@ -929,20 +941,20 @@ def render_ai_settings_sidebar():
 def render_ai_tab(sym, company_name, mkt_key, I, S):
     """แสดง tab AI Analysis ใน render_deep"""
 
-    provider    = st.session_state.get("ai_provider", "claude")
-    claude_key  = st.session_state.get("claude_api_key", "").strip()
-    gemini_key  = st.session_state.get("gemini_api_key", "").strip()
-    cache_key   = f"{sym}_{mkt_key}_{provider}"
-    cached      = st.session_state.ai_analysis_cache.get(cache_key)
+    # อ่านจาก _store keys (ไม่ใช่ widget keys โดยตรง)
+    provider   = st.session_state.get("ai_provider", "claude")
+    claude_key = st.session_state.get("_claude_key_store", "").strip()
+    gemini_key = st.session_state.get("_gemini_key_store", "").strip()
+    cache_key  = f"{sym}_{mkt_key}_{provider}"
+    cached     = st.session_state.ai_analysis_cache.get(cache_key)
 
     # ── Provider selector ────────────────────────────────────
     st.markdown('<div class="sec-title">🤖 AI วิเคราะห์เจาะลึก</div>', unsafe_allow_html=True)
-
     col_p1, col_p2 = st.columns(2)
     with col_p1:
         is_claude = provider == "claude"
         if st.button(
-            "🟠 Claude (Anthropic)" + (" ✓" if is_claude else ""),
+            "🟠 Claude" + (" ✓" if is_claude else ""),
             use_container_width=True,
             type="primary" if is_claude else "secondary",
             key="ai_sel_claude_" + sym,
@@ -952,7 +964,7 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
     with col_p2:
         is_gemini = provider == "gemini"
         if st.button(
-            "🔵 Gemini (Google)" + (" ✓" if is_gemini else ""),
+            "🔵 Gemini" + (" ✓" if is_gemini else ""),
             use_container_width=True,
             type="primary" if is_gemini else "secondary",
             key="ai_sel_gemini_" + sym,
@@ -960,34 +972,43 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
             st.session_state.ai_provider = "gemini"
             st.rerun()
 
-    # ── API Key input inline ──────────────────────────────────
+    # ── API Key input inline — widget key ไม่ชนกับ sidebar หรือ _store ──
     st.markdown('<div class="sec-title">🔑 API Key</div>', unsafe_allow_html=True)
+
     if provider == "claude":
-        claude_key = st.text_input(
+        # on_change เขียนลง _store แทนการ assign โดยตรง
+        def _save_claude_inline():
+            st.session_state["_claude_key_store"] = st.session_state["inline_claude_" + sym]
+
+        st.text_input(
             "Claude API Key",
             value=claude_key,
             type="password",
             placeholder="sk-ant-api03-... (รับที่ console.anthropic.com)",
-            key="claude_api_key_inline_" + sym,
+            key="inline_claude_" + sym,
+            on_change=_save_claude_inline,
         )
-        st.session_state.claude_api_key = claude_key
-        api_key = claude_key
-        has_key = bool(api_key)
+        # อ่านค่า fresh หลัง widget render (อาจ user เพิ่งพิมพ์ใน widget นี้)
+        api_key        = st.session_state.get("inline_claude_" + sym, claude_key).strip()
         provider_label = "Claude Opus"
-        badge_cls = "ai-claude"
+        badge_cls      = "ai-claude"
     else:
-        gemini_key = st.text_input(
+        def _save_gemini_inline():
+            st.session_state["_gemini_key_store"] = st.session_state["inline_gemini_" + sym]
+
+        st.text_input(
             "Gemini API Key",
             value=gemini_key,
             type="password",
             placeholder="AIza... (รับที่ aistudio.google.com — ฟรี)",
-            key="gemini_api_key_inline_" + sym,
+            key="inline_gemini_" + sym,
+            on_change=_save_gemini_inline,
         )
-        st.session_state.gemini_api_key = gemini_key
-        api_key = gemini_key
-        has_key = bool(api_key)
+        api_key        = st.session_state.get("inline_gemini_" + sym, gemini_key).strip()
         provider_label = "Gemini 2.0 Flash"
-        badge_cls = "ai-gemini"
+        badge_cls      = "ai-gemini"
+
+    has_key = bool(api_key)
 
     # ── Cached result ─────────────────────────────────────────
     if cached:
