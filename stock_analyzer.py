@@ -925,50 +925,62 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
     # sync provider กลับ session state (radio ทำได้ตรงๆ เพราะ key ไม่ conflict)
     st.session_state["ai_provider"] = provider
 
-    # ── 2. API Key — แต่ละ provider มี widget key ถาวรของตัวเอง ──────
-    st.markdown('<div class="sec-title">🔑 API Key</div>', unsafe_allow_html=True)
+    # ── 2 + 4. Form รวม API Key + ปุ่มวิเคราะห์ ────────────────
+    # ใส่ใน st.form เพื่อป้องกัน Enter rerun และ sync ค่าก่อน submit
+    st.markdown('<div class="sec-title">🔑 API Key & วิเคราะห์</div>', unsafe_allow_html=True)
 
-    # render ทั้งสองช่อง แต่ซ่อนช่องที่ไม่ใช้ด้วย CSS display:none
-    # วิธีนี้ทำให้ Streamlit ยัง track ค่าทั้งสองไว้ใน session_state เสมอ
-    # แม้ user สลับ provider แล้วกลับมา key ก็ยังอยู่
-    if provider == "claude":
-        api_key = st.text_input(
-            "Claude API Key",
-            type="password",
-            placeholder="sk-ant-api03-...   ·   รับได้ที่ console.anthropic.com",
-            key="aikey_claude",   # key ถาวร ไม่ผูกกับ sym
-            help="รับ API Key ฟรีที่ console.anthropic.com → API Keys",
-        ).strip()
-        provider_label = "Claude Opus"
-        badge_cls  = "ai-claude"
-        key_link   = "console.anthropic.com"
-        key_color  = "#d4896a"
-    else:
-        api_key = st.text_input(
-            "Gemini API Key",
-            type="password",
-            placeholder="AIza...   ·   รับได้ฟรีที่ aistudio.google.com (ไม่ต้องใส่บัตรเครดิต)",
-            key="aikey_gemini",   # key ถาวร
-            help="รับ API Key ฟรีที่ aistudio.google.com → Get API Key",
-        ).strip()
-        provider_label = "Gemini 2.0 Flash"
-        badge_cls  = "ai-gemini"
-        key_link   = "aistudio.google.com"
-        key_color  = "#6fa8f5"
-
-    if not api_key:
-        st.markdown(
-            f'<div class="warn-box">'
-            f'🔑 ใส่ API Key แล้วกดวิเคราะห์ · '
-            f'รับฟรีที่ <strong style="color:{key_color};">{key_link}</strong>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-    # ── 3. Cache check ────────────────────────────────────────
     cache_key = f"{sym}_{mkt_key}_{provider}"
     cached    = st.session_state.ai_analysis_cache.get(cache_key)
 
+    with st.form(key="ai_form_" + sym_safe, border=False):
+        if provider == "claude":
+            api_key = st.text_input(
+                "Claude API Key",
+                type="password",
+                placeholder="sk-ant-api03-...   ·   รับได้ที่ console.anthropic.com",
+                value=st.session_state.get("_saved_claude_key", ""),
+                help="รับ API Key ฟรีที่ console.anthropic.com → API Keys",
+            ).strip()
+            provider_label = "Claude Opus"
+            badge_cls  = "ai-claude"
+            key_link   = "console.anthropic.com"
+            key_color  = "#d4896a"
+        else:
+            api_key = st.text_input(
+                "Gemini API Key",
+                type="password",
+                placeholder="AIza...   ·   รับได้ฟรีที่ aistudio.google.com",
+                value=st.session_state.get("_saved_gemini_key", ""),
+                help="รับ API Key ฟรีที่ aistudio.google.com → Get API Key",
+            ).strip()
+            provider_label = "Gemini 2.0 Flash"
+            badge_cls  = "ai-gemini"
+            key_link   = "aistudio.google.com"
+            key_color  = "#6fa8f5"
+
+        if not api_key:
+            st.markdown(
+                f'<div class="warn-box">'
+                f'🔑 ใส่ API Key แล้วกดปุ่มวิเคราะห์ · '
+                f'รับฟรีที่ <strong style="color:{key_color};">{key_link}</strong>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        submitted = st.form_submit_button(
+            f"🚀 วิเคราะห์ {sym} ด้วย {provider_label}",
+            use_container_width=True,
+            disabled=not api_key,
+        )
+
+    # บันทึก key ไว้ใน session state หลัง form submit
+    if submitted and api_key:
+        if provider == "claude":
+            st.session_state["_saved_claude_key"] = api_key
+        else:
+            st.session_state["_saved_gemini_key"] = api_key
+
+    # ── 3. แสดง cache ถ้ามี ──────────────────────────────────
     if cached:
         age_sec = int((datetime.now() - cached["ts"]).total_seconds())
         age_str = f"{age_sec // 60} นาที" if age_sec >= 60 else f"{age_sec} วินาที"
@@ -995,7 +1007,7 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
         col_r1, col_r2 = st.columns(2)
         with col_r1:
             if st.button("🔄 วิเคราะห์ใหม่", use_container_width=True,
-                         key="ai_refresh_" + sym_safe, disabled=not api_key):
+                         key="ai_refresh_" + sym_safe):
                 del st.session_state.ai_analysis_cache[cache_key]
                 st.rerun()
         with col_r2:
@@ -1003,22 +1015,15 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
                          key="ai_clearall_" + sym_safe):
                 st.session_state.ai_analysis_cache = {}
                 st.rerun()
-        return
 
-    # ── 4. ปุ่มวิเคราะห์ ─────────────────────────────────────
-    st.markdown(
-        '<div class="info-box" style="margin-top:8px;">'
-        '🌐 ค้นหาข่าว 1 เดือนล่าสุดจากอินเทอร์เน็ต แล้วให้ AI วิเคราะห์ร่วมกับ Technical Indicators'
-        '</div>',
-        unsafe_allow_html=True,
-    )
-
-    if st.button(
-        f"🚀 วิเคราะห์ {sym} ด้วย {provider_label}",
-        use_container_width=True,
-        disabled=not api_key,
-        key="ai_run_" + sym_safe + "_" + provider,
-    ):
+    # ── 4. Execute เมื่อ form submit ─────────────────────────
+    elif submitted and api_key:
+        st.markdown(
+            '<div class="info-box">'
+            '🌐 ค้นหาข่าว 1 เดือนล่าสุดจากอินเทอร์เน็ต แล้วให้ AI วิเคราะห์ร่วมกับ Technical Indicators'
+            '</div>',
+            unsafe_allow_html=True,
+        )
         news_items = []
         with st.spinner(f"🌐 กำลังค้นหาข่าว {sym}..."):
             try:
@@ -1029,7 +1034,6 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
                     f"Technical: ราคา {I['price']:.2f} "
                     f"RSI {I['rsi']:.1f} คะแนน {S['sc']}/100"
                 )
-
         with st.spinner(f"🤖 {provider_label} กำลังวิเคราะห์..."):
             try:
                 prompt = build_ai_prompt(sym, company_name, mkt_key, context_text)
