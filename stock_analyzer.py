@@ -549,62 +549,52 @@ def score_stock(I, p):
 # DATA FETCH
 # ---------------------------------------------------------------
 def inspect_settrade_api():
-    """
-    แสดง raw info ของ settrade-v2 API:
-    - methods ทั้งหมดที่ Investor มี
-    - raw response จาก candlestick และ quote method ต่างๆ
-    ใช้สำหรับ debug หา field ราคาปัจจุบัน
-    """
     api = st.session_state.market_api
     rt  = st.session_state.realtime_api
+    sym = "PTT"
 
     st.markdown("### 🔬 Settrade API Inspector")
 
-    # ── Methods ที่ Investor มี ───────────────────────────────
-    st.markdown("**📋 Methods บน market_api (MarketData):**")
-    methods = [m for m in dir(api) if not m.startswith("_")]
-    st.code("\n".join(methods))
+    # methods
+    with st.expander("📋 Methods ทั้งหมดบน MarketData", expanded=False):
+        st.code("\n".join(m for m in dir(api) if not m.startswith("_")))
 
-    if rt is not api and rt is not None:
-        st.markdown("**📋 Methods บน realtime_api:**")
-        rt_methods = [m for m in dir(rt) if not m.startswith("_")]
-        st.code("\n".join(rt_methods))
-
-    sym_test = "PTT"
-    st.markdown(f"---\n**🧪 ทดสอบกับ {sym_test}:**")
-
-    # ── Raw candlestick daily ────────────────────────────────
-    st.markdown("**`get_candlestick(interval='1d', limit=3)` → raw response:**")
+    # raw daily
+    st.markdown("**Daily candlestick (limit=3) — raw columns & values:**")
     try:
-        raw = api.get_candlestick(sym_test, interval="1d", limit=3)
-        st.json(raw if isinstance(raw, (list, dict)) else str(raw))
+        raw = api.get_candlestick(sym, interval="1d", limit=3)
+        df = pd.DataFrame(raw)
+        st.write("Columns:", list(df.columns))
+        st.dataframe(df)
     except Exception as e:
-        st.error(str(e))
+        st.error(f"daily: {e}")
 
-    # ── Raw candlestick intraday ─────────────────────────────
-    for interval in ["1m", "5m", "15m"]:
-        st.markdown(f"**`get_candlestick(interval='{interval}', limit=3)`:**")
+    # ลอง intraday ทุก format
+    st.markdown("**Intraday candlestick — ลองทุก interval format:**")
+    for iv in ["1","5","15","30","60","1m","5m","15m","M1","M5","H1"]:
         try:
-            raw = api.get_candlestick(sym_test, interval=interval, limit=3)
-            st.json(raw if isinstance(raw, (list, dict)) else str(raw))
-            break  # แสดงแค่อันแรกที่สำเร็จ
+            raw = api.get_candlestick(sym, interval=iv, limit=2)
+            if raw:
+                df = pd.DataFrame(raw)
+                st.success(f"✅ interval=`{iv}` → columns: {list(df.columns)}")
+                st.dataframe(df)
+                break
         except Exception as e:
-            st.warning(f"interval={interval}: {e}")
+            st.warning(f"❌ interval=`{iv}` → {str(e)[:80]}")
 
-    # ── ลอง quote methods ทุกแบบ ────────────────────────────
+    # quote methods
+    st.markdown("**Quote methods:**")
     for obj_name, obj in [("market_api", api), ("realtime_api", rt)]:
-        if obj is None:
-            continue
-        for method in ["get_quote_symbol", "get_quote", "quote",
-                       "get_market_status", "get_security_info",
-                       "get_price_info", "get_stock_info"]:
+        if obj is None: continue
+        for method in ["get_quote_symbol","get_quote","quote",
+                       "get_security_info","get_price_info","get_stock_info"]:
             if hasattr(obj, method):
-                st.markdown(f"**`{obj_name}.{method}('{sym_test}')`:**")
                 try:
-                    result = getattr(obj, method)(sym_test)
-                    st.json(result if isinstance(result, (list, dict)) else str(result))
+                    result = getattr(obj, method)(sym)
+                    st.success(f"✅ `{obj_name}.{method}()`")
+                    st.json(result if isinstance(result,(list,dict)) else str(result))
                 except Exception as e:
-                    st.warning(f"{method}: {e}")
+                    st.warning(f"❌ `{obj_name}.{method}()` → {str(e)[:80]}")
 
 
 def _parse_price_from_row(row):
@@ -626,6 +616,11 @@ def _get_settrade_current_price(symbol, debug_log=None):
     """
     ดึงราคาปัจจุบันจาก settrade-v2
     คืน (price, chg_pct) หรือ (None, None)
+
+    Strategy:
+    1. ลอง quote methods ทุกชนิด
+    2. ดึง candlestick รายวัน limit=1 → ถ้าเป็นวันนี้ = ราคา close ปัจจุบัน
+    3. ลอง intraday ทุก interval format ที่ settrade รองรับ
     """
     api = st.session_state.market_api
     rt  = st.session_state.realtime_api
@@ -680,19 +675,33 @@ def _get_settrade_current_price(symbol, debug_log=None):
         except Exception as e:
             log(f"✗ candle interval={interval} → {e}")
 
-    # ── 3. Daily candle limit=1 — อย่างน้อยได้ราคาปิดวันนี้ ──
-    try:
-        raw = api.get_candlestick(symbol, interval="1d", limit=1)
-        if not raw:
-            raw = api.get_candlestick(symbol, interval="D", limit=1)
-        if raw:
+    # ── 3. Daily candle — เช็คว่าเป็นวันนี้หรือเปล่า ─────────
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    for iv in ["1d", "D", "day", "1D"]:
+        try:
+            raw = api.get_candlestick(symbol, interval=iv, limit=1)
+            if not raw:
+                continue
             df_d = pd.DataFrame(raw if isinstance(raw, list) else [raw])
-            p = _parse_price_from_row(df_d.iloc[-1].to_dict())
+            row  = df_d.iloc[-1].to_dict()
+            log(f"✓ daily iv={iv} row={str(row)[:150]}")
+            # เช็ควันที่
+            date_val = str(row.get("date","") or row.get("time","") or
+                           row.get("datetime","") or row.get("t","") or "")
+            is_today = today_str in date_val if date_val else False
+            p = _parse_price_from_row(row)
             if p:
-                log(f"✓ daily limit=1 → price={p}")
-                return p, None
-    except Exception as e:
-        log(f"✗ daily limit=1 → {e}")
+                log(f"  → price={p} is_today={is_today}")
+                # ถ้าเป็นวันนี้ = ราคา real (ใช้ได้เลย)
+                # ถ้าไม่ใช่ = ราคาปิดเมื่อวาน (คืน None ให้ใช้ fallback)
+                if is_today:
+                    return p, None
+                else:
+                    # เก็บไว้เป็น last resort แต่ยังคืน None ก่อน
+                    pass
+            break
+        except Exception as e:
+            log(f"✗ daily iv={iv} → {e}")
 
     log("⚠ ดึง realtime ไม่ได้เลย")
     return None, None
@@ -1119,65 +1128,87 @@ def render_ai_settings_sidebar():
 # ---------------------------------------------------------------
 def render_ai_tab(sym, company_name, mkt_key, I, S):
     sym_safe = "".join(c for c in sym if c.isalnum())
+    prov_key = "_ai_prov_" + sym_safe          # provider แยกต่อหุ้น
+    save_key_c = "_saved_claude_key"
+    save_key_g = "_saved_gemini_key"
 
-    # ── Provider: ใช้ปุ่ม HTML แทน widget ทุกชนิด ────────────
-    # เหตุผล: selectbox/radio ทุกตัวใน Streamlit trigger rerun
-    # ซึ่งทำให้ tab กระโดดออก วิธีเดียวที่ไม่ rerun คือปุ่ม
-    # แต่ปุ่มก็ rerun... ดังนั้นเก็บ state ไว้ใน session_state
-    # และ rerun จะอ่านค่าเดิมได้ถูกต้อง
-    prov_key = "_ai_prov_" + sym_safe
     if prov_key not in st.session_state:
         st.session_state[prov_key] = "claude"
     provider = st.session_state[prov_key]
 
+    # ── Provider toggle ──────────────────────────────────────
+    # ไม่ใช้ rerun เมื่อกดเปลี่ยน provider
+    # แทนที่ด้วย checkbox สองอัน + อ่าน state ในรอบเดียวกัน
     col_c, col_g = st.columns(2)
     with col_c:
-        if st.button(
+        pick_claude = st.button(
             "🟠 Claude" + (" ✓" if provider == "claude" else ""),
             use_container_width=True,
             type="primary" if provider == "claude" else "secondary",
             key="aib_c_" + sym_safe,
-        ):
-            st.session_state[prov_key] = "claude"
-            st.rerun()
+        )
     with col_g:
-        if st.button(
+        pick_gemini = st.button(
             "🔵 Gemini" + (" ✓" if provider == "gemini" else ""),
             use_container_width=True,
             type="primary" if provider == "gemini" else "secondary",
             key="aib_g_" + sym_safe,
-        ):
-            st.session_state[prov_key] = "gemini"
-            st.rerun()
+        )
 
+    # อัปเดต provider จากปุ่มที่กด (ไม่ rerun — อ่านต่อในรอบเดียว)
+    if pick_claude:
+        provider = "claude"
+        st.session_state[prov_key] = "claude"
+    if pick_gemini:
+        provider = "gemini"
+        st.session_state[prov_key] = "gemini"
+
+    # metadata ตาม provider
     if provider == "claude":
-        provider_label, badge_cls = "Claude Opus", "ai-claude"
-        key_link, key_color = "console.anthropic.com", "#d4896a"
-        save_key = "_saved_claude_key"
+        provider_label = "Claude Opus"
+        badge_cls  = "ai-claude"
+        key_link   = "console.anthropic.com"
+        key_color  = "#d4896a"
+        save_key   = save_key_c
     else:
-        provider_label, badge_cls = "Gemini 2.0 Flash", "ai-gemini"
-        key_link, key_color = "aistudio.google.com", "#6fa8f5"
-        save_key = "_saved_gemini_key"
+        provider_label = "Gemini 2.0 Flash"
+        badge_cls  = "ai-gemini"
+        key_link   = "aistudio.google.com"
+        key_color  = "#6fa8f5"
+        save_key   = save_key_g
 
-    # ── API Key: form ป้องกัน Enter-rerun ──────────────────
+    # ── API Key (form key คงที่ ไม่ผูกกับ provider) ──────────
     st.markdown('<div class="sec-title">🔑 API Key</div>', unsafe_allow_html=True)
-    with st.form(key="aif_" + sym_safe + "_" + provider, border=False):
-        api_key = st.text_input(
-            f"{provider_label} API Key",
+    with st.form(key="aif_" + sym_safe, border=False):   # key คงที่!
+        # render ทั้งสอง field เสมอ ซ่อน label อันที่ไม่ใช้
+        c_inp = st.text_input(
+            "Claude API Key",
             type="password",
-            placeholder=("sk-ant-api03-...  ·  console.anthropic.com"
-                         if provider == "claude"
-                         else "AIza...  ·  aistudio.google.com (ฟรี)"),
-            value=st.session_state.get(save_key, ""),
-        ).strip()
+            placeholder="sk-ant-api03-...  ·  console.anthropic.com",
+            value=st.session_state.get(save_key_c, ""),
+            key="fi_c_" + sym_safe,
+            label_visibility="visible" if provider == "claude" else "collapsed",
+        )
+        g_inp = st.text_input(
+            "Gemini API Key",
+            type="password",
+            placeholder="AIza...  ·  aistudio.google.com (ฟรี)",
+            value=st.session_state.get(save_key_g, ""),
+            key="fi_g_" + sym_safe,
+            label_visibility="visible" if provider == "gemini" else "collapsed",
+        )
+        api_key = (c_inp if provider == "claude" else g_inp).strip()
+
         if not api_key:
             st.caption(f"🔑 รับ API Key ฟรีที่ {key_link}")
+
         submitted = st.form_submit_button(
             f"🚀 วิเคราะห์ {sym} ด้วย {provider_label}",
             use_container_width=True,
             disabled=not api_key,
         )
 
+    # บันทึก key
     if submitted and api_key:
         st.session_state[save_key] = api_key
 
@@ -1214,6 +1245,7 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
                 st.rerun()
 
     elif submitted and api_key:
+        # ── วิเคราะห์ ────────────────────────────────────────
         news_items = []
         with st.spinner(f"🌐 ค้นหาข่าว {sym}..."):
             try:
@@ -1233,7 +1265,8 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
                 st.rerun()
             except Exception as e:
                 err = str(e)
-                hint = ("❌ API Key ไม่ถูกต้อง" if "401" in err or "unauthorized" in err.lower()
+                hint = ("❌ API Key ไม่ถูกต้อง"
+                        if "401" in err or "unauthorized" in err.lower() or "invalid_api_key" in err.lower()
                         else "⏳ Rate limit — รอสักครู่" if "429" in err
                         else "💳 Quota หมด" if "quota" in err.lower()
                         else "⏱ Timeout" if "timeout" in err.lower()
