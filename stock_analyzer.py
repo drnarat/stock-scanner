@@ -233,3 +233,40 @@ def view_scan():
     if st.button(f"สแกน {m_key} ({len(stocks)} หุ้น)", use_container_width=True):
         results = []
         prog = st.progress(0)
+        for i, (sym, name) in enumerate(stocks):
+            df, info = get_data(sym, m_key)
+            if not df.empty:
+                I = compute_indicators(df, p); S = score_stock(I, p)
+                results.append(dict(Symbol=sym, Name=name, Price=I["price"], Change=I["chg"], Score=S["sc"], Signal=S["rec"], SigCls=S["cls"], _I=I, _S=S))
+            prog.progress((i+1)/len(stocks))
+        st.session_state.scan_results[m_key] = pd.DataFrame(results)
+
+    df_res = st.session_state.scan_results.get(m_key)
+    if df_res is not None and not df_res.empty:
+        for _, row in df_res.iterrows():
+            st.markdown(f"""
+            <div class="stock-card {row['SigCls']}">
+                <div class="sc-top">
+                    <div><div class="sc-sym">{row['Symbol']}</div><div class="sc-name">{row['Name']}</div></div>
+                    <div><div class="sc-price">{row['Price']:,.2f}</div><div class="sc-chg {'cup' if row['Change']>=0 else 'cdn'}">{row['Change']:+.2f}%</div></div>
+                </div>
+                <div class="sc-bot">
+                    <span class="chip chip-{row['SigCls']}">{row['Signal']}</span>
+                    <div class="sring {'sh' if row['Score']>=65 else 'sm' if row['Score']>=45 else 'sl'}">{int(row['Score'])}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button(f"เจาะลึก {row['Symbol']}", key=f"da_{row['Symbol']}"):
+                st.session_state.update({"detail_sym":row['Symbol'], "detail_mkt":m_key, "view":"detail"})
+                st.rerun()
+
+def view_detail():
+    render_header()
+    if st.button("← กลับหน้าสแกน"): st.session_state.view="scan"; st.rerun()
+    st.write(f"วิเคราะห์เจาะลึกหุ้น {st.session_state.detail_sym}")
+    # (ใส่ฟังก์ชัน render_deep เดิมของคุณตรงนี้)
+
+# ── 8. Router ──────────────────────────────────────────────────
+if st.session_state.view == "login": view_login()
+elif st.session_state.view == "scan": view_scan()
+elif st.session_state.view == "detail": view_detail()
