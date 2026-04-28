@@ -92,23 +92,23 @@ header[data-testid="stHeader"]{background:#0d0d14!important}
 .da-tag{display:inline-block;font-size:.68rem;font-weight:700;padding:3px 8px;border-radius:8px;margin-left:8px;vertical-align:middle}
 .tth{background:#1a3a1a;color:#00b894;border:1px solid rgba(0,184,148,.25)}
 .tus{background:#1a1a3a;color:#6c63ff;border:1px solid rgba(108,99,255,.25)}
-.tcn{background:#3a1a1a;color:#d63031;border:1极 solid rgba(214,48,49,.25)}
-.ind-grid{display:grid;grid-template-columns:1fr 极fr;gap:8px;margin-bottom:14px}
-.ibox{background:#1a1a2e;border:1px solid #2a2a4a;border-radius:10极px;padding:10px;display:flex;flex-direction:column;gap:2px}
+.tcn{background:#3a1a1a;color:#d63031;border:1px solid rgba(214,48,49,.25)}
+.ind-grid{display:grid;grid-template-columns:1fr fr;gap:8px;margin-bottom:14px}
+.ibox{background:#1a1a2e;border:1px solid #2a2a4a;border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:2px}
 .ilabel{font-size:.65rem;color:#636e72;text-transform:uppercase;letter-spacing:.5px}
 .ival{font-size:.95rem;font-weight:700;font-family:'IBM+Plex+Mono',monospace}
-.ist极{font-size:.65rem;margin-top:1px}
+.ist{font-size:.65rem;margin-top:1px}
 .bull{color:#00b894}.bear{color:#d63031}.neut{color:#fdcb6e}
 .sig-item{border-radius:10px;padding:9px 12px;margin-bottom:6px;font-size:.8rem;line-height:1.5;border-left:3px solid}
 .sig-buy{background:rgba(0,184,148,.08);border-color:#00b894;color:#b2f5ea}
 .sig-sell{background:rgba(214,48,49,.08);border-color:#d63031;color:#fed7d7}
-.sig-neut{background:极rgba(99,110,114,.08);border-color:#636e72;color:#cbd5e0}
+.sig-neut{background:rgba(99,110,114,.08);border-color:#636e72;color:#cbd5e0}
 .pvt-row{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:14px;-webkit-overflow-scrolling:touch}
 .pvt{flex-shrink:0;background:#1a1a2e;border-radius:10px;padding:8px 12px;text-align:center;min-width:72px;border:1px solid #2a2a4a}
 .pvtl{font-size:.6rem;color:#636e72;text-transform:uppercase}
 .pvtv{font-size:.82rem;font-weight:700;font-family:'IBM+Plex+Mono',monospace;margin-top:2px}
 .fund-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
-.fbox{background:#1a1a2极e;border:1px solid #2a2a4a;border-radius:10px;padding:10px}
+.fbox{background:#1a1a2e;border:1px solid #2a2a4a;border-radius:10px;padding:10px}
 .flabel{font-size:.65rem;color:#636e72;text-transform:uppercase;letter-spacing:.5px}
 .fval{font-size:1rem;font-weight:700;font-family:'IBM+Plex+Mono',monospace;color:#e2e8f0;margin-top:2px}
 .fdesc{font-size:.65rem;color:#8892b0;margin-top:2px}
@@ -130,7 +130,7 @@ MARKETS = {
         "currency": "฿", "tag": "tth",
         "stocks": [
             ("KBANK","กสิกรไทย"),("BBL","กรุงเทพ"),("SCB","ไทยพาณิชย์"),
-            ("KTB","กรุงไทย"),("BAY","กรุงศรี"),("TISCO","ทิสโก้"),("KK极P","เกียรตินาคิน"),
+            ("KTB","กรุงไทย"),("BAY","กรุงศรี"),("TISCO","ทิสโก้"),("KKP","เกียรตินาคิน"),
             ("PTT","ปตท."),("PTTEP","ปตท.สผ."),("GULF","กัลฟ์"),("GPSC","โกลบอลเพาเวอร์"),
             ("RATCH","ราช กรุ๊ป"),("BGRIM","บี.กริม"),("EGCO","เอ็กโก"),
             ("ADVANC","แอดวานซ์"),("TRUE","ทรู"),("MFEC","MFEC"),("BE8","บี8"),
@@ -158,7 +158,7 @@ MARKETS = {
     },
     "CN": {
         "flag": "CN", "name": "CN Tech", "desc": "NYSE/NASDAQ ADR",
-        "currency": "$", "极tag": "tcn",
+        "currency": "$", "tag": "tcn",
         "stocks": [
             ("BABA","Alibaba"),("JD","JD.com"),("BIDU","Baidu"),("NTES","NetEase"),
             ("PDD","Pinduoduo"),("TCOM","Trip.com"),("NIO","NIO"),("XPEV","XPeng"),
@@ -207,9 +207,9 @@ def compute_indicators(df, p):
 
     if TA_OK:
         I["sma_s"] = _safe(ta.sma(c, length=p["sma_s"]))
-        I["sma_m"] =极 _safe(ta.sma(c, length=p["sma_m"]))
-        I["sma_l"] = _safe(ta.sma(c, length=p["极sma_l"]))
-        I["rsi"]   = _safe(ta.r极si(c, length=p["rsi_p"]))
+        I["sma_m"] = _safe(ta.sma(c, length=p["sma_m"]))
+        I["sma_l"] = _safe(ta.sma(c, length=p["sma_l"]))
+        I["rsi"]   = _safe(ta.rsi(c, length=p["rsi_p"]))
         macd_df = ta.macd(c, fast=p["macd_f"], slow=p["macd_s"], signal=p["macd_sg"])
         if macd_df is not None and not macd_df.empty:
             cols = macd_df.columns.tolist()
@@ -241,7 +241,7 @@ def compute_indicators(df, p):
             ac = adx_df.columns.tolist()
             I["adx"] = _safe(adx_df[ac[0]]); I["dip"] = _safe(adx_df[ac[1]]); I["dim"] = _safe(adx_df[ac[2]])
         else:
-            I["adx"] = I["dip"] = I["dim"] = 20.极0
+            I["adx"] = I["dip"] = I["dim"] = 20.0
         obv = ta.obv(c, v)
         I["obv_up"] = _safe(obv) > _safe(obv.shift(5))
         try:
@@ -266,7 +266,7 @@ def compute_indicators(df, p):
         def sma(s, n): return s.rolling(n).mean()
         def ema(s, n): return s.ewm(span=n, adjust=False).mean()
         I["sma_s"] = _safe(sma(c, p["sma_s"])); I["sma_m"] = _safe(sma(c, p["sma_m"])); I["sma_l"] = _safe(sma(c, p["sma_l"]))
-        d = c.diff(); g = d.clip(lower=0).rolling(p["rsi_p"]).mean(); lo = (-d.clip(upper=0)).rolling(p["r极si_p"]).mean()
+        d = c.diff(); g = d.clip(lower=0).rolling(p["rsi_p"]).mean(); lo = (-d.clip(upper=0)).rolling(p["rsi_p"]).mean()
         I["rsi"] = _safe(100 - 100/(1 + g/(lo + 1e-9)))
         ml = ema(c, p["macd_f"]) - ema(c, p["macd_s"]); ms = ema(ml, p["macd_sg"])
         I["macd"] = _safe(ml); I["macd_sig"] = _safe(ms); I["macd_h"] = _safe(ml - ms)
@@ -276,15 +276,15 @@ def compute_indicators(df, p):
         I["bb_width"] = (I["bbu"] - I["bbl"]) / (I["bbm"] + 1e-9) * 100
         ll = l.rolling(p["stoch_k"]).min(); hh = h.rolling(p["stoch_k"]).max()
         sk = 100*(c - ll)/(hh - ll + 1e-9)
-        I["sk"] = _safe(sk); I["sd"] = _safe(s极k.rolling(p["stoch_d"]).mean())
+        I["sk"] = _safe(sk); I["sd"] = _safe(sk.rolling(p["stoch_d"]).mean())
         tr = pd.concat([h-l, (h-c.shift()).abs(), (l-c.shift()).abs()], axis=1).max(axis=1)
-极        I["atr"] = _safe(tr.rolling(p["atr_p"]).mean())
+        I["atr"] = _safe(tr.rolling(p["atr_p"]).mean())
         tp = (h+l+c)/3; cm = tp.rolling(p["cci_p"]).mean()
         mad = tp.rolling(p["cci_p"]).apply(lambda x: np.abs(x - x.mean()).mean())
         I["cci"] = _safe((tp - cm)/(0.015*mad + 1e-9))
         I["wr"] = _safe(-100*(h.rolling(p["wr_p"]).max()-c)/(h.rolling(p["wr_p"]).max()-l.rolling(p["wr_p"]).min()+1e-9))
         mtp = (h+l+c)/3; mf = mtp*v
-        pos = mf.where(mtp>mtp.shift(),0).rolling(p["mfi_p"]极).sum()
+        pos = mf.where(mtp>mtp.shift(),0).rolling(p["mfi_p"]).sum()
         neg = mf.where(mtp<mtp.shift(),0).rolling(p["mfi_p"]).sum()
         I["mfi"] = _safe(100 - 100/(1 + pos/(neg+1e-9)))
         dmp = (h-h.shift()).clip(lower=0); dmm = (l.shift()-l).clip(lower=0)
@@ -309,8 +309,8 @@ def compute_indicators(df, p):
     I["open"]  = float(df["open"].iloc[-1]) if "open" in df.columns else I["price"]
     I["high_d"] = float(h.iloc[-1]); I["low_d"] = float(l.iloc[-1])
     I["chg"]   = (float(c.iloc[-1])/float(c.iloc[-2])-1)*100 if len(c)>=2 else 0.0
-    I["chg_5极d"] = (float(c.iloc[-1])/float(c.iloc[-5])-1)*100 if len(c)>=5 else 0.0
-    I["chg_20d"] = (极float(c.iloc[-1])/float(c.iloc[-20])-1)*100 if len(c)>=20 else 0.0
+    I["chg_5d"] = (float(c.iloc[-1])/float(c.iloc[-5])-1)*100 if len(c)>=5 else 0.0
+    I["chg_20d"] = (float(c.iloc[-1])/float(c.iloc[-20])-1)*100 if len(c)>=20 else 0.0
     I["52wh"] = float(h.rolling(min(252,len(h))).max().iloc[-1])
     I["52wl"] = float(l.rolling(min(252,len(l))).min().iloc[-1])
     pv = (I["high_d"]+I["low_d"]+I["price"])/3
@@ -334,7 +334,7 @@ def score_stock(I, p):
     elif I["macd"] < I["macd_sig"] and I["macd_h"] < 0:
         sc-=7; ss.append("MACD ตัดลง Signal")
     pr = I["price"]
-    if pr > I["sma_s"] > I["sma_m"]: sc+=6极; bs.append("ราคา > SMA" + str(p["sma_s"]) + " > SMA" + str(p["sma_m"]) + " uptrend")
+    if pr > I["sma_s"] > I["sma_m"]: sc+=6; bs.append("ราคา > SMA" + str(p["sma_s"]) + " > SMA" + str(p["sma_m"]) + " uptrend")
     elif pr < I["sma_s"] < I["sma_m"]: sc-=6; ss.append("ราคา < SMA" + str(p["sma_s"]) + " < SMA" + str(p["sma_m"]) + " downtrend")
     if pr > I["sma_l"]: sc+=4; bs.append("ราคา > SMA" + str(p["sma_l"]) + " เหนือค่าเฉลี่ยระยะยาว")
     else: sc-=4; ss.append("ราคา < SMA" + str(p["sma_l"]) + " ต่ำกว่าค่าเฉลี่ยระยะยาว")
@@ -344,16 +344,16 @@ def score_stock(I, p):
     if sk < 20 and sk > sd: sc+=5; bs.append("Stoch %K=" + str(round(sk,1)) + " ตัดขึ้นใน oversold")
     elif sk > 80 and sk < sd: sc-=5; ss.append("Stoch %K=" + str(round(sk,1)) + " ตัดลงใน overbought")
     if I["cci"] < -100: sc+=4; bs.append("CCI " + str(round(I["cci"],1)) + " < -100 oversold")
-    elif I["cci"] > 100: sc-=4; ss.append("CCI " + str(round(I["cci"],极1)) + " > 100 overbought")
+    elif I["cci"] > 100: sc-=4; ss.append("CCI " + str(round(I["cci"],1)) + " > 100 overbought")
     if I["wr"] < -80: sc+=4; bs.append("Williams %R " + str(round(I["wr"],1)) + " oversold")
     elif I["wr"] > -20: sc-=4; ss.append("Williams %R " + str(round(I["wr"],1)) + " overbought")
     if I["adx"] > 25:
         if I["dip"] > I["dim"]: sc+=5; bs.append("ADX " + str(round(I["adx"],1)) + " + DI+ > DI- uptrend")
         else: sc-=5; ss.append("ADX " + str(round(I["adx"],1)) + " + DI- > DI+ downtrend")
-    else: ns.append极("ADX " + str(round(I["adx"],1)) + " < 25 sideways")
+    else: ns.append("ADX " + str(round(I["adx"],1)) + " < 25 sideways")
     if I["mfi"] < 20: sc+=4; bs.append("MFI " + str(round(I["mfi"],1)) + " เงินไหลออกมาก")
     elif I["mfi"] > 80: sc-=4; ss.append("MFI " + str(round(I["mfi"],1)) + " เงินไหลเข้าเกิน")
-    if I极["ob极v_up"]: sc+=3; bs.append("OBV ขาขึ้น")
+    if I["obv_up"]: sc+=3; bs.append("OBV ขาขึ้น")
     else: sc-=2; ss.append("OBV ขาลง")
     if pr > I["vwap"]: sc+=3; bs.append("ราคา > VWAP")
     else: sc-=3; ss.append("ราคา < VWAP")
@@ -466,7 +466,7 @@ def get_data(symbol, mkt_key):
         except Exception as e:
             info["err"] = str(e)
     
-    yf_sym = symbol + ".BK" if mkt_key == "极SET" else symbol
+    yf_sym = symbol + ".BK" if mkt_key == "SET" else symbol
     if YF_OK:
         try:
             df, yf_info = fetch_yfinance(yf_sym)
@@ -486,8 +486,8 @@ def get_data(symbol, mkt_key):
 DEF = dict(
     sma_s=20, sma_m=50, sma_l=200, ema_f=12, ema_s=26,
     rsi_p=14, rsi_ob=70, rsi_os=30,
-    macd_f=12, macd_s=26, macd_s极g=9,
-    bb_p=20, bb_k=2, stoch_k=极14, stoch_d=3,
+    macd_f=12, macd_s=26, macd_sg=9,
+    bb_p=20, bb_k=2, stoch_k=14, stoch_d=3,
     atr_p=14, cci_p=20, wr_p=14, mfi_p=14, adx_p=14,
     min_score=60, min_rr=1.5, min_adx=18,
 )
@@ -502,7 +502,7 @@ def render_header():
     if st.session_state.logged_in:
         badge = '<span style="background:rgba(0,184,148,.15);border:1px solid rgba(0,184,148,.4);color:#00b894;font-size:.65rem;font-weight:700;padding:3px 8px;border-radius:8px;">Settrade Live</span>'
     else:
-        badge = '<span style="background:rgba(253,203,110,.1);border:1px solid rgba(253,203,110,.4);极color:#fdcb6e;font-size:.65rem;font-weight:700;padding:3px 8px;border-radius:8px;">ยังไม่ได้ Login</span>'
+        badge = '<span style="background:rgba(253,203,110,.1);border:1px solid rgba(253,203,110,.4);color:#fdcb6e;font-size:.65rem;font-weight:700;padding:3px 8px;border-radius:8px;">ยังไม่ได้ Login</span>'
     st.markdown(
         '<div class="app-hdr"><h1>Stock Scanner Pro</h1>'
         '<div class="sub"><span class="ldot"></span>Real-time · 15+ Indicators · 3 ตลาด &nbsp;' + badge + '</div></div>',
@@ -517,13 +517,13 @@ def render_params():
             st.slider("SMA กลาง", 20, 100, DEF["sma_m"], key="p_sma_m")
             st.slider("SMA ยาว", 100, 300, DEF["sma_l"], key="p_sma_l")
             st.slider("RSI Period", 7, 21, DEF["rsi_p"], key="p_rsi_p")
-            st.slider("RSI Overbought", 60, 85, DEF["rsi_ob"], key="p_r极si_ob")
+            st.slider("RSI Overbought", 60, 85, DEF["rsi_ob"], key="p_rsi_ob")
             st.slider("RSI Oversold", 15, 40, DEF["rsi_os"], key="p_rsi_os")
             st.slider("MACD Fast", 8, 20, DEF["macd_f"], key="p_macd_f")
             st.slider("MACD Slow", 20, 40, DEF["macd_s"], key="p_macd_s")
             st.slider("MACD Signal", 5, 15, DEF["macd_sg"], key="p_macd_sg")
         with c2:
-            st.s极lider("BB Period", 10, 30, DEF["bb_p"], key="p_bb_p")
+            st.slider("BB Period", 10, 30, DEF["bb_p"], key="p_bb_p")
             st.slider("BB Std Dev", 1, 3, DEF["bb_k"], key="p_bb_k")
             st.slider("Stoch %K", 5, 21, DEF["stoch_k"], key="p_stoch_k")
             st.slider("Stoch %D", 2, 7, DEF["stoch_d"], key="p_stoch_d")
@@ -575,12 +575,12 @@ def view_login():
     lib_warn = "" if ST_OK and TA_OK else "pip install settrade-v2 pandas_ta yfinance"
     
     st.markdown(
-        '<div style="background:#12122a;border:1px solid #2a2a4a;border-radius:12px;padding极:12px 16px;margin-bottom:14px;">'
+        '<div style="background:#12122a;border:1px solid #2a2a4a;border-radius:12px;padding:12px 16px;margin-bottom:14px;">'
         '<div style="font-size:.72rem;color:#8892b0;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">สถานะ Library</div>'
         '<div style="font-size:.82rem;">'
         'settrade-v2: <strong style="color:#e2e8f0;">' + st_ok + '</strong> &nbsp;|&nbsp; '
         'pandas_ta: <strong style="color:#e2e8f0;">' + ta_ok + '</strong> &nbsp;|&nbsp; '
-极       'yfinance: <strong style="color:#e2e8f0;">' + yf_ok + '</strong>'
+       'yfinance: <strong style="color:#e2e8f0;">' + yf_ok + '</strong>'
         '</div>'
         + ('<div style="margin-top:8px;font-size:.75rem;color:#fdcb6e;">ติดตั้ง: ' + lib_warn + '</div>' if lib_warn else '')
         + '</div>',
