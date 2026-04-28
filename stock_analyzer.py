@@ -619,7 +619,63 @@ def fetch_settrade(symbol, limit=200):
     return df
 
 
+def fetch_yfinance(symbol, period="1y"):
+    if not YF_OK:
+        raise RuntimeError("yfinance ไม่ได้ติดตั้ง")
+    ticker = yf.Ticker(symbol)
+    df = ticker.history(period=period)[["Open","High","Low","Close","Volume"]].copy()
+    df.columns = ["open","high","low","close","volume"]
+    return df.dropna(), ticker.info
+
+
+def fetch_mock(symbol, n=200):
+    np.random.seed(abs(hash(symbol)) % 99999)
+    base = np.random.uniform(8, 600)
+    c = [base]
+    for _ in range(n - 1):
+        c.append(max(c[-1] * (1 + np.random.normal(0, .014)), 0.5))
+    c = np.array(c)
+    h  = c * np.random.uniform(1.001, 1.025, n)
+    lo = c * np.random.uniform(0.975, 0.999, n)
+    v  = np.random.uniform(3e5, 8e6, n).astype(int)
+    return pd.DataFrame({"open": c, "high": h, "low": lo, "close": c, "volume": v})
+
+
 def get_data(symbol, mkt_key):
+    info = {}
+    use_live = st.session_state.logged_in and mkt_key == "SET"
+
+    if use_live:
+        try:
+            df = fetch_settrade(symbol)
+            rt_price, rt_chg = _get_settrade_current_price(symbol)
+            if rt_price and rt_price > 0:
+                prev_close = float(df["close"].iloc[-1])
+                df.iloc[-1, df.columns.get_loc("close")] = rt_price
+                df.iloc[-1, df.columns.get_loc("high")] = max(float(df["high"].iloc[-1]), rt_price)
+                df.iloc[-1, df.columns.get_loc("low")]  = min(float(df["low"].iloc[-1]),  rt_price)
+                info["rt_price"]   = rt_price
+                info["prev_close"] = prev_close
+                info["source"]     = "settrade_live"
+            else:
+                info["source"] = "settrade_daily"
+            return df, info
+        except Exception as e:
+            info["err"] = str(e)
+
+    yf_sym = symbol + ".BK" if mkt_key == "SET" else symbol
+    if YF_OK:
+        try:
+            df, yf_info = fetch_yfinance(yf_sym)
+            info["source"] = "yfinance"
+            info["yf"]     = yf_info
+            return df, info
+        except Exception:
+            pass
+
+    df = fetch_mock(symbol)
+    info["source"] = "mock"
+    return df, info
     info = {}
     use_live = st.session_state.logged_in and mkt_key == "SET"
 
