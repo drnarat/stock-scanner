@@ -632,8 +632,49 @@ def _parse_price_from_row(row):
     return None
 
 
+def _rows_to_df(raw):
+    """แปลง raw response จาก settrade เป็น DataFrame มาตรฐาน"""
+    if not raw:
+        return None
+    df = pd.DataFrame(raw if isinstance(raw, list) else [raw])
+    if df.empty:
+        return None
+    # normalize columns
+    rename = {}
+    for c in df.columns:
+        cl = c.lower()
+        if cl in ("close","c","last","price"):           rename[c] = "close"
+        elif cl in ("open","o"):                          rename[c] = "open"
+        elif cl in ("high","h"):                          rename[c] = "high"
+        elif cl in ("low","l"):                           rename[c] = "low"
+        elif cl in ("volume","vol","v"):                  rename[c] = "volume"
+    df = df.rename(columns=rename)
+    # fill missing cols
+    for col, fallback in [("open","close"),("high","close"),("low","close"),("volume",None)]:
+        if col not in df.columns:
+            df[col] = df[fallback] if fallback else 1_000_000
+    if "close" not in df.columns:
+        return None
+    df = df[["open","high","low","close","volume"]].apply(pd.to_numeric, errors="coerce").dropna()
+    return df if len(df) >= 2 else None
+
+
+def _try_candlestick(symbol, intervals, limit=200):
+    """ลอง get_candlestick จนกว่าจะสำเร็จ คืน (df, interval_used)"""
+    api = st.session_state.market_api
+    for iv in intervals:
+        try:
+            raw = api.get_candlestick(symbol, interval=iv, limit=limit)
+            df  = _rows_to_df(raw)
+            if df is not None and len(df) >= 5:
+                return df, iv
+        except Exception:
+            pass
+    return None, None
+
+
 def _get_settrade_current_price(symbol, debug_log=None):
-    """ดึงราคาปัจจุบันจาก settrade-v2, คืน (price, chg%) หรือ (None, None)"""
+    """ดึงราคาปัจจุบัน คืน (price, chg%) หรือ (None, None)"""
     api = st.session_state.market_api
     rt  = st.session_state.realtime_api
 
@@ -641,72 +682,52 @@ def _get_settrade_current_price(symbol, debug_log=None):
         if debug_log is not None:
             debug_log.append(msg)
 
-    # ── 1. Quote methods ─────────────────────────────────────
+    # 1. quote methods
     for label, obj in [("rt", rt), ("api", api)]:
-        if obj is None:
-            continue
-        for method in ["get_quote_symbol","get_quote","quote",
-                       "get_security_info","get_price_info",
-                       "get_stock_info","get_last_price","get_ticker"]:
-            if not hasattr(obj, method):
-                continue
+        if obj is None: continue
+        for m in ["get_quote_symbol","get_quote","quote","get_security_info","get_price_info"]:
+            if not hasattr(obj, m): continue
             try:
-                q = getattr(obj, method)(symbol)
-                log(f"✓ {label}.{method} → {str(q)[:120]}")
-                if isinstance(q, dict):
-                    p = _parse_price_from_row(q)
-                    if p:
-                        chg = float(q.get("change_percent") or q.get("pctChange") or
-                                    q.get("changepercent") or q.get("change_pct") or 0)
-                        return p, chg
-                elif isinstance(q, list) and q:
-                    row = q[-1] if isinstance(q[-1], dict) else {}
-                    p = _parse_price_from_row(row)
-                    if p:
-                        return p, None
+                q = getattr(obj, m)(symbol)
+                log(f"✓ {label}.{m} → {str(q)[:100]}")
+                row = q if isinstance(q, dict) else (q[-1] if isinstance(q, list) and q else {})
+                p = _parse_price_from_row(row)
+                if p:
+                    chg = float(row.get("change_percent") or row.get("pctChange") or 0)
+                    return p, chg
             except Exception as e:
-                log(f"✗ {label}.{method} → {str(e)[:60]}")
+                log(f"✗ {label}.{m} → {str(e)[:50]}")
 
-    # ── 2. Candlestick intraday — ลอง interval ทุก format ───
-    # settrade-v2 จริงๆ ใช้ "1","5","15","30","60" (ไม่มี m ต่อท้าย)
-    for iv in ["1","5","15","30","60","1m","5m","15m","D","1d","day"]:
+    # 2. intraday candlestick limit=1
+    for iv in ["1","5","15","30","60","1m","5m","D","1d"]:
         try:
-            raw = api.get_candlestick(symbol, interval=iv, limit=2)
-            if not raw:
-                continue
+            raw = api.get_candlestick(symbol, interval=iv, limit=1)
+            if not raw: continue
             rows = raw if isinstance(raw, list) else [raw]
-            row  = rows[-1]
-            if not isinstance(row, dict):
-                row = pd.DataFrame([row]).iloc[0].to_dict()
-            log(f"✓ iv={iv} keys={list(row.keys())[:6]}")
+            row  = rows[-1] if isinstance(rows[-1], dict) else {}
+            log(f"✓ iv={iv} cols={list(row.keys())[:5]}")
             p = _parse_price_from_row(row)
             if p:
                 log(f"  → price={p}")
                 return p, None
         except Exception as e:
-            log(f"✗ iv={iv} → {str(e)[:50]}")
+            log(f"✗ iv={iv} → {str(e)[:40]}")
 
-    log("⚠ ดึงราคาปัจจุบันไม่ได้")
+    log("⚠ ดึงราคาไม่ได้")
     return None, None
 
+
 def fetch_settrade(symbol, limit=200):
-    raw = st.session_state.market_api.get_candlestick(symbol, interval="1d", limit=limit)
-    df = pd.DataFrame(raw)
-    rename = {"last":"close","c":"close","o":"open","h":"high","l":"low",
-              "v":"volume","vol":"volume"}
-    df.rename(columns={col: rename.get(col, col) for col in df.columns}, inplace=True)
-    if "close" not in df.columns:
-        for alt in ["Close","CLOSE","price","Price"]:
-            if alt in df.columns:
-                df["close"] = df[alt]; break
-    for col, alt in [("open","close"),("high","close"),("low","close"),("volume",None)]:
-        if col not in df.columns:
-            df[col] = df[alt] if alt else 1_000_000
-    df = df[["open","high","low","close","volume"]].apply(
-        pd.to_numeric, errors="coerce").dropna()
-    if len(df) < 30:
-        raise ValueError("ข้อมูลน้อยเกินไป")
+    """ดึง OHLCV รายวัน ลอง interval หลาย format"""
+    # settrade-v2 ใช้ "D" หรือ "1d" สำหรับ daily
+    df, iv = _try_candlestick(symbol,
+                               ["D","1d","day","1D"],
+                               limit=limit)
+    if df is None:
+        raise ValueError(f"ดึงข้อมูล {symbol} ไม่ได้ (ลอง D,1d,day,1D)")
     return df
+
+
 
 
 def fetch_yfinance(symbol, period="1y"):
@@ -1070,141 +1091,115 @@ def render_ai_settings_sidebar():
 # RENDER AI ANALYSIS TAB
 # ---------------------------------------------------------------
 def render_ai_tab(sym, company_name, mkt_key, I, S):
-    sym_safe = "".join(c for c in sym if c.isalnum())
+    """AI Analysis panel — อยู่ใต้ tabs ไม่ได้อยู่ใน tab"""
+    s = "".join(c for c in sym if c.isalnum())   # sym_safe
 
-    # ── State keys (ทั้งหมดต่อหุ้น ไม่มี global) ─────────────
-    K_PROV  = f"_ap_{sym_safe}"      # provider
-    K_TRIG  = f"_at_{sym_safe}"      # trigger วิเคราะห์
-    K_RPROV = f"_arp_{sym_safe}"     # provider ตอน run
-    K_RKEY  = f"_ark_{sym_safe}"     # api key ตอน run
-    K_CKC   = f"_ck_{sym_safe}_c"   # claude key input
-    K_CKG   = f"_ck_{sym_safe}_g"   # gemini key input
+    # session state keys ทั้งหมด per-sym
+    KP = f"_ap_{s}"    # provider
+    KT = f"_at_{s}"    # trigger
+    KR = f"_ar_{s}"    # run_prov
+    KK = f"_ak_{s}"    # run_key
+    KC = f"_kc_{s}"    # claude key widget
+    KG = f"_kg_{s}"    # gemini key widget
 
-    for k, v in [(K_PROV,"claude"),(K_TRIG,False),(K_RPROV,"claude"),(K_RKEY,"")]:
-        if k not in st.session_state:
-            st.session_state[k] = v
+    if KP not in st.session_state: st.session_state[KP] = "claude"
+    if KT not in st.session_state: st.session_state[KT] = False
 
-    provider = st.session_state[K_PROV]
+    prov = st.session_state[KP]
 
-    # ── Provider toggle ───────────────────────────────────────
-    col_c, col_g = st.columns(2)
-    with col_c:
-        if st.button("🟠 Claude" + (" ✓" if provider=="claude" else ""),
-                     use_container_width=True,
-                     type="primary" if provider=="claude" else "secondary",
-                     key=f"_btn_c_{sym_safe}"):
-            st.session_state[K_PROV] = "claude"
-            provider = "claude"
-    with col_g:
-        if st.button("🔵 Gemini" + (" ✓" if provider=="gemini" else ""),
-                     use_container_width=True,
-                     type="primary" if provider=="gemini" else "secondary",
-                     key=f"_btn_g_{sym_safe}"):
-            st.session_state[K_PROV] = "gemini"
-            provider = "gemini"
+    # provider toggle — อ่าน button ในรอบเดียวกัน ไม่ rerun
+    c1, c2 = st.columns(2)
+    with c1:
+        b_c = st.button("🟠 Claude" + (" ✓" if prov=="claude" else ""),
+                        use_container_width=True,
+                        type="primary" if prov=="claude" else "secondary",
+                        key=f"bc_{s}")
+    with c2:
+        b_g = st.button("🔵 Gemini" + (" ✓" if prov=="gemini" else ""),
+                        use_container_width=True,
+                        type="primary" if prov=="gemini" else "secondary",
+                        key=f"bg_{s}")
+    if b_c: st.session_state[KP] = "claude"; prov = "claude"
+    if b_g: st.session_state[KP] = "gemini"; prov = "gemini"
 
-    # ── API Key — แต่ละ provider ใช้ widget key แยกกัน ─────────
-    # render ทั้งคู่เสมอ ซ่อน label อันที่ไม่ใช้
-    # วิธีนี้ Streamlit track ค่าทั้งสองไว้ตลอด session
-    st.markdown('<div class="sec-title">🔑 API Key</div>', unsafe_allow_html=True)
-    claude_key = st.text_input(
-        "Claude API Key",
-        type="password",
-        placeholder="sk-ant-api03-...  ·  console.anthropic.com",
-        key=K_CKC,
-        label_visibility="visible" if provider=="claude" else "collapsed",
-    ).strip()
-    gemini_key = st.text_input(
-        "Gemini API Key",
-        type="password",
-        placeholder="AIza...  ·  aistudio.google.com (ฟรี)",
-        key=K_CKG,
-        label_visibility="visible" if provider=="gemini" else "collapsed",
-    ).strip()
+    is_claude = prov == "claude"
+    plabel = "Claude" if is_claude else "Gemini 2.0 Flash"
+    link   = "console.anthropic.com" if is_claude else "aistudio.google.com (ฟรี)"
 
-    api_key = claude_key if provider=="claude" else gemini_key
-    plabel  = "Claude" if provider=="claude" else "Gemini 2.0 Flash"
-    link    = "console.anthropic.com" if provider=="claude" else "aistudio.google.com"
+    # api key inputs — render ทั้งคู่ตลอดเวลา (ซ่อน label อันที่ไม่ใช้)
+    # วิธีนี้ Streamlit เก็บค่าทั้งสองไว้ใน session_state ไม่ reset
+    ck = st.text_input("Claude API Key", type="password",
+                       placeholder="sk-ant-api03-...  |  console.anthropic.com",
+                       key=KC,
+                       label_visibility="visible" if is_claude else "collapsed").strip()
+    gk = st.text_input("Gemini API Key", type="password",
+                       placeholder="AIza...  |  aistudio.google.com",
+                       key=KG,
+                       label_visibility="visible" if not is_claude else "collapsed").strip()
+    api_key = ck if is_claude else gk
 
     if not api_key:
-        st.caption(f"🔑 รับ API Key ฟรีที่ {link}")
+        st.caption(f"🔑 ยังไม่มี API Key · รับฟรีที่ {link}")
 
-    # ── ปุ่มวิเคราะห์ ─────────────────────────────────────────
+    # run button — เก็บ trigger ใน session_state
     if st.button(f"🚀 วิเคราะห์ {sym} ด้วย {plabel}",
-                 use_container_width=True,
-                 disabled=not api_key,
-                 key=f"_run_{sym_safe}"):
-        st.session_state[K_TRIG]  = True
-        st.session_state[K_RPROV] = provider
-        st.session_state[K_RKEY]  = api_key
+                 use_container_width=True, disabled=not api_key, key=f"run_{s}"):
+        st.session_state[KT] = True
+        st.session_state[KR] = prov
+        st.session_state[KK] = api_key
 
-    # ── แสดง cache ────────────────────────────────────────────
-    cache_key = f"{sym}_{mkt_key}_{provider}"
-    cached    = st.session_state.ai_analysis_cache.get(cache_key)
+    # cache
+    ck_name = f"{sym}_{mkt_key}_{prov}"
+    cached  = st.session_state.ai_analysis_cache.get(ck_name)
 
     if cached:
         age = int((datetime.now()-cached["ts"]).total_seconds())
         st.caption(f"📋 {plabel} · {age//60} นาทีที่แล้ว")
         if cached.get("news"):
-            with st.expander(f"📰 ข่าว ({len(cached['news'])} รายการ)", expanded=False):
+            with st.expander(f"📰 ข่าว ({len(cached['news'])} รายการ)"):
                 for n in cached["news"]:
-                    st.markdown(
-                        f'<div class="news-item"><div class="news-title">{n["title"]}</div>' +
-                        f'<div class="news-meta">{n["source"]}' +
-                        (f' · {n["date"]}' if n.get("date") else "")+
-                        '</div></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="news-item"><div class="news-title">{n["title"]}</div>'
+                                f'<div class="news-meta">{n["source"]}'
+                                +(f' · {n["date"]}' if n.get("date") else "")
+                                +'</div></div>', unsafe_allow_html=True)
         st.markdown('<div class="sec-title">🧠 ผลวิเคราะห์</div>', unsafe_allow_html=True)
         st.markdown(cached["text"])
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("🔄 วิเคราะห์ใหม่", use_container_width=True, key=f"_ref_{sym_safe}"):
-                del st.session_state.ai_analysis_cache[cache_key]
-                st.rerun()
-        with c2:
-            if st.button("🗑 ล้าง Cache", use_container_width=True, key=f"_clr_{sym_safe}"):
-                st.session_state.ai_analysis_cache = {}
-                st.rerun()
+        rc1, rc2 = st.columns(2)
+        with rc1:
+            if st.button("🔄 วิเคราะห์ใหม่", use_container_width=True, key=f"ref_{s}"):
+                del st.session_state.ai_analysis_cache[ck_name]; st.rerun()
+        with rc2:
+            if st.button("🗑 ล้าง Cache", use_container_width=True, key=f"clr_{s}"):
+                st.session_state.ai_analysis_cache = {}; st.rerun()
 
-    # ── Execute ───────────────────────────────────────────────
-    elif st.session_state.get(K_TRIG) and st.session_state.get(K_RKEY):
-        st.session_state[K_TRIG] = False
-        run_prov = st.session_state[K_RPROV]
-        run_key  = st.session_state[K_RKEY]
-        run_cache= f"{sym}_{mkt_key}_{run_prov}"
-        run_plabel = "Claude" if run_prov=="claude" else "Gemini 2.0 Flash"
+    elif st.session_state.get(KT) and st.session_state.get(KK):
+        st.session_state[KT] = False
+        rp  = st.session_state[KR]
+        rk  = st.session_state[KK]
+        rcn = f"{sym}_{mkt_key}_{rp}"
+        rl  = "Claude" if rp=="claude" else "Gemini 2.0 Flash"
 
-        news_items = []
+        news = []
         with st.spinner(f"🌐 ค้นหาข่าว {sym}..."):
-            try:
-                context_text, news_items = fetch_stock_context_text(
-                    sym, company_name, mkt_key, I, S, mkt_key)
-            except Exception:
-                context_text = (f"Technical: ราคา {I['price']:.2f} "
-                                f"RSI {I['rsi']:.1f} คะแนน {S['sc']}/100")
+            try:   ctx, news = fetch_stock_context_text(sym, company_name, mkt_key, I, S, mkt_key)
+            except: ctx = f"ราคา {I['price']:.2f} RSI {I['rsi']:.1f}"
 
-        with st.spinner(f"🤖 {run_plabel} กำลังวิเคราะห์..."):
+        with st.spinner(f"🤖 {rl} กำลังวิเคราะห์..."):
             try:
-                prompt  = build_ai_prompt(sym, company_name, mkt_key, context_text)
-                result  = (call_claude_api(prompt, run_key) if run_prov=="claude"
-                           else call_gemini_api(prompt, run_key))
-                st.session_state.ai_analysis_cache[run_cache] = {
-                    "ts": datetime.now(), "text": result, "news": news_items,
-                }
+                result = (call_claude_api(build_ai_prompt(sym, company_name, mkt_key, ctx), rk)
+                          if rp=="claude"
+                          else call_gemini_api(build_ai_prompt(sym, company_name, mkt_key, ctx), rk))
+                st.session_state.ai_analysis_cache[rcn] = {
+                    "ts": datetime.now(), "text": result, "news": news}
                 st.rerun()
             except Exception as e:
-                err  = str(e)
-                hint = ("❌ API Key ไม่ถูกต้อง"
-                        if "401" in err or "invalid_api_key" in err.lower() or "api_key" in err.lower()
-                        else "⏳ Rate limit — รอสักครู่" if "429" in err
-                        else "💳 Quota หมด"             if "quota" in err.lower()
-                        else "⏱ Timeout"                if "timeout" in err.lower()
-                        else "🔌 เชื่อมต่อไม่ได้")
-                st.session_state[K_TRIG] = False
-                st.markdown(
-                    f'<div class="err-box"><strong>{hint}</strong><br>' +
-                    f'<span style="font-size:.73rem;opacity:.7;">{err[:400]}</span></div>',
-                    unsafe_allow_html=True)
-
+                err = str(e)
+                h = ("❌ API Key ไม่ถูกต้อง" if "401" in err or "invalid_api_key" in err.lower()
+                     else "⏳ Rate limit" if "429" in err
+                     else "💳 Quota หมด" if "quota" in err.lower()
+                     else "⏱ Timeout" if "timeout" in err.lower()
+                     else f"🔌 Error: {err[:120]}")
+                st.error(h)
 
 # ---------------------------------------------------------------
 # SHARED UI
@@ -1433,7 +1428,7 @@ def render_deep(sym, mkt_key, I, S, info, yf_info=None):
         unsafe_allow_html=True
     )
 
-    tab_tech, tab_target, tab_sig, tab_fund, tab_ai = st.tabs(["Technical","เป้าหมาย","สัญญาณ","พื้นฐาน","🤖 AI วิเคราะห์"])
+    tab_tech, tab_target, tab_sig, tab_fund = st.tabs(["Technical","เป้าหมาย","สัญญาณ","พื้นฐาน"])
 
     with tab_tech:
         def ib(lbl, val, is_b, is_s):
@@ -1618,9 +1613,10 @@ def render_deep(sym, mkt_key, I, S, info, yf_info=None):
         else:
             st.info("ข้อมูลพื้นฐานใช้ได้กับหุ้น US/CN ผ่าน yfinance\nติดตั้ง: pip install yfinance")
 
-    with tab_ai:
-        company_name = dict(mkt.get("stocks",[])).get(sym, sym)
-        render_ai_tab(sym, company_name, mkt_key, I, S)
+    # ── AI Analysis (ใต้ tabs — ไม่ rerun ออกจาก tab) ─────
+    st.markdown('<div class="sec-title" style="margin-top:18px;">🤖 AI วิเคราะห์</div>', unsafe_allow_html=True)
+    company_name_ai = dict(mkt.get("stocks",[])).get(sym, sym)
+    render_ai_tab(sym, company_name_ai, mkt_key, I, S)
 
 # ---------------------------------------------------------------
 # VIEWS
