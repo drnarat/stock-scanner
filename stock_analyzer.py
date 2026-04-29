@@ -517,7 +517,7 @@ def _parse_price_from_row(row):
     if not isinstance(row, dict): 
         return None
 
-    # ทะลวงชั้น JSON ถ้า Settrade ห่อข้อมูลมา (เช่น {'result': {'last': 35.5}})
+    # ทะลวงชั้น JSON ถ้า Settrade ห่อข้อมูลมา
     for nested_key in ["security", "data", "result", "quoteInfo", "quote"]:
         if nested_key in row and isinstance(row[nested_key], dict):
             row = row[nested_key]
@@ -972,7 +972,6 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
                 st.session_state.ai_analysis_cache = {}
                 st.rerun()
     else:
-        # ปุ่ม AI แบบใหม่ ที่ไม่เด้งหายเวลาวิเคราะห์
         if st.button(
             f"🚀 วิเคราะห์ {sym} ด้วย {plabel}",
             use_container_width=True,
@@ -1488,4 +1487,65 @@ def view_manual():
     if submitted and sym_input.strip():
         sym = sym_input.strip().upper()
         mkt_map = {"SET - ไทย":"SET","US - สหรัฐ":"US","CN - จีน":"CN"}
-        mkt_key = mkt_map[mkt_
+        mkt_key = mkt_map[mkt_sel]
+        p = get_params()
+        with st.spinner("กำลังดึงข้อมูล " + sym + "..."):
+            try:
+                df, info = get_data(sym, mkt_key)
+                I = compute_indicators(df, p); S = score_stock(I, p)
+                yf_inf = info.get("yf") if info.get("source") == "yfinance" else None
+                render_params()
+                render_deep(sym, mkt_key, I, S, info, yf_info=yf_inf)
+            except Exception as e:
+                st.markdown('<div class="err-box">ดึงข้อมูลไม่ได้: ' + str(e) + '</div>', unsafe_allow_html=True)
+    else:
+        render_params()
+
+def view_detail():
+    render_header()
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("กลับรายการหุ้น", use_container_width=True):
+            st.session_state.view = "scan"; st.rerun()
+    with c2:
+        if st.button("ค้นหาหุ้นอื่น", use_container_width=True):
+            st.session_state.view = "manual"; st.rerun()
+            
+    sym = st.session_state.detail_sym; mkt_key = st.session_state.detail_mkt
+    p = get_params()
+    cached = st.session_state.scan_results.get(mkt_key)
+    
+    if cached is not None and sym in cached["Symbol"].values:
+        row = cached[cached["Symbol"]==sym].iloc[0]
+        I = row["_I"]; S = row["_S"]; info = row.get("_info", {"source":"mock"})
+        yf_inf = None
+        if YF_OK and mkt_key != "SET":
+            try: _, yf_inf = fetch_yfinance(sym)
+            except Exception: pass
+    else:
+        with st.spinner("กำลังดึงข้อมูล " + sym + "..."):
+            df, info = get_data(sym, mkt_key)
+            I = compute_indicators(df, p); S = score_stock(I, p)
+            yf_inf = info.get("yf")
+            
+    render_params()
+    render_deep(sym, mkt_key, I, S, info, yf_info=yf_inf)
+
+    st.markdown('<div class="sec-title" style="margin-top:18px;">🤖 AI วิเคราะห์</div>', unsafe_allow_html=True)
+    ai_company = dict(MARKETS.get(mkt_key,{}).get("stocks",[])).get(sym, sym)
+    render_ai_tab(sym, ai_company, mkt_key, I, S)
+
+# ==========================================
+# 13. ระบบ Router หลัก (App Entry Point)
+# ==========================================
+view = st.session_state.view
+if view == "login":
+    view_login()
+elif view == "scan":
+    view_scan()
+elif view == "manual":
+    view_manual()
+elif view == "detail":
+    view_detail()
+
+st.markdown('<div style="text-align:center;padding:20px 0 10px;color:#2a2a4a;font-size:.68rem;">ใช้เพื่อการศึกษาและการเขียนโปรแกรมเท่านั้น · ไม่ใช่คำแนะนำการลงทุนนะครับ</div>', unsafe_allow_html=True)
