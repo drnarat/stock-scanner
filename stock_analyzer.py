@@ -23,7 +23,7 @@ try: import plotly.graph_objects as go; from plotly.subplots import make_subplot
 except: PLOTLY_OK = False
 
 # ==========================================
-# 2. ตั้งค่าหน้าเว็บและ CSS 
+# 2. ตั้งค่าหน้าเว็บและ CSS (โปร่งแสง สบายตา)
 # ==========================================
 st.set_page_config(page_title="Stock Scanner Pro AI", page_icon="📈", layout="centered", initial_sidebar_state="collapsed")
 
@@ -91,7 +91,7 @@ def search_stock_news_one_month(symbol, company_name="", market="SET"):
         ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
         with urllib.request.urlopen(req, timeout=10, context=ctx) as r:
             items = re.findall(r'<item>(.*?)</item>', r.read().decode("utf-8", errors="replace"), re.DOTALL)
-            # จำกัด 3 ข่าว เพื่อประหยัดโควต้า AI และไม่ให้เกิน Limit
+            # จำกัด 3 ข่าวเด่น เพื่อความไวและประหยัดโควต้า AI
             for item in items[:3]:
                 title = re.search(r'<title>(.*?)</title>', item)
                 src = re.search(r'<source[^>]*>(.*?)</source>', item)
@@ -111,7 +111,6 @@ def call_gemini_api(prompt, api_key):
 
 def call_claude_api(prompt, api_key):
     url = "https://api.anthropic.com/v1/messages"
-    # อัปเดตรุ่นล่าสุด แก้ 404
     payload = _json.dumps({"model": "claude-3-5-haiku-20241022", "max_tokens": 1200, "messages": [{"role": "user", "content": prompt}]}).encode("utf-8")
     req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json", "x-api-key": api_key.strip(), "anthropic-version": "2023-06-01"})
     ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
@@ -121,7 +120,7 @@ def call_claude_api(prompt, api_key):
     except urllib.error.HTTPError as e: raise Exception(f"Claude Error: {e.read().decode('utf-8')}")
 
 # ==========================================
-# 5. ดึงข้อมูลและ Indicator เชิงลึก
+# 5. ดึงข้อมูลแบบ Hybrid (Settrade + YFinance)
 # ==========================================
 def fetch_mock(symbol, n=150):
     np.random.seed(abs(hash(symbol)) % 99999)
@@ -131,33 +130,32 @@ def fetch_mock(symbol, n=150):
     return pd.DataFrame({"open": c, "high": c*np.random.uniform(1.001, 1.02, n), "low": c*np.random.uniform(0.98, 0.999, n), "close": c, "volume": np.random.uniform(1e5, 5e6, n)}, index=dates)
 
 def get_data(symbol, mkt_key):
-    # --- 1. ลองดึงจาก Settrade (พอร์ตจริง/Sandbox) ---
-    if st.session_state.logged_in and mkt_key == "SET":
-        try:
-            # ล็อคเป้าใช้ "1d" (ตัวเล็ก) ตามมาตรฐานของ Settrade
-            raw = st.session_state.market_api.get_candlestick(symbol, interval="1d", limit=150)
-            df = pd.DataFrame(raw)
-            if not df.empty:
-                df.rename(columns={"last": "close", "vol": "volume"}, inplace=True)
-                return df[["open","high","low","close","volume"]].apply(pd.to_numeric)
-        except Exception:
-            pass # ถ้าดึงไม่ได้ให้ปล่อยผ่านเงียบๆ ไม่ต้องแสดง Error
+    # 📌 1. หุ้นไทย (SET) -> ดึงจาก Settrade เท่านั้น
+    if mkt_key == "SET":
+        if st.session_state.logged_in:
+            try:
+                raw = st.session_state.market_api.get_candlestick(symbol, interval="1d", limit=150)
+                df = pd.DataFrame(raw)
+                if not df.empty:
+                    df.rename(columns={"last": "close", "vol": "volume"}, inplace=True)
+                    return df[["open","high","low","close","volume"]].apply(pd.to_numeric)
+            except Exception:
+                pass
+        return fetch_mock(symbol)
 
-    # --- 2. แหล่งสำรอง: ดึงจาก Yahoo Finance (ข้อมูลจริง ฟรี ไม่ติด Error) ---
-    if YF_OK:
+    # 📌 2. หุ้นต่างประเทศ (US, CN) -> ดึงจาก Yahoo Finance (แม่นยำสูง)
+    if mkt_key in ["US", "CN"] and YF_OK:
         try:
-            yf_sym = symbol + ".BK" if mkt_key == "SET" else symbol
-            df = yf.Ticker(yf_sym).history(period="6mo")[["Open","High","Low","Close","Volume"]]
+            df = yf.Ticker(symbol).history(period="6mo")[["Open","High","Low","Close","Volume"]]
             if not df.empty:
                 df.columns = ["open","high","low","close","volume"]
                 return df.dropna()
         except Exception: 
             pass
 
-    # --- 3. ไม้ตายสุดท้าย: กราฟจำลอง (เพื่อให้แอปไม่พัง) ---
+    # 📌 3. ถ้าทุกอย่างพลาด ถึงจะใช้ Mock
     return fetch_mock(symbol)
 
-# ฟังก์ชันดึงค่าปลอดภัย ป้องกัน Error: cannot convert the series to float
 def _safe(s, fallback=0.0):
     try:
         v = s.iloc[-1] if hasattr(s, "iloc") else s
@@ -167,7 +165,6 @@ def _safe(s, fallback=0.0):
 def compute_indicators(df):
     c = df["close"]; h = df["high"]; l = df["low"]; v = df["volume"]
     I = {}
-    
     if TA_OK:
         I["sma_s"] = _safe(ta.sma(c, length=10)); I["sma_m"] = _safe(ta.sma(c, length=25))
         I["rsi"] = _safe(ta.rsi(c, length=14))
@@ -244,8 +241,6 @@ def render_interactive_chart(df, sym):
     fig.add_trace(go.Candlestick(x=df.index, open=df['open'], high=df['high'], low=df['low'], close=df['close']), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['close'].rolling(25).mean(), line=dict(color='#22d3ee', width=1.5), name='SMA25'), row=1, col=1)
     fig.add_trace(go.Bar(x=df.index, y=df['volume'], marker_color=['#34d399' if c>=o else '#f87171' for o,c in zip(df['open'],df['close'])]), row=2, col=1)
-    
-    # ดึงค่าสีพื้นหลังให้ตรงตาม Theme ที่ผู้ใช้ใช้งาน
     bg_color = "rgba(0,0,0,0)"
     fig.update_layout(template='plotly', plot_bgcolor=bg_color, paper_bgcolor=bg_color, margin=dict(l=5, r=5, t=5, b=5), xaxis_rangeslider_visible=False, height=450, showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
@@ -312,7 +307,6 @@ def view_detail():
             
             st.markdown("<br>", unsafe_allow_html=True)
             
-            # ตารางอินดิเคเตอร์ 15 ตัว
             st.markdown(
                 f'<div class="ind-grid">'
                 f'<div class="ibox"><div class="ilabel">RSI (14)</div><div class="ival" style="color:{"#dc2626" if I["rsi"]>70 else "#059669" if I["rsi"]<35 else "inherit"};">{I["rsi"]:.1f}</div></div>'
@@ -336,7 +330,6 @@ def view_detail():
                 f'</div>', unsafe_allow_html=True
             )
 
-        # ส่วนประมวลผล AI 
         st.markdown('<div class="da-hdr" style="margin-top:20px;">', unsafe_allow_html=True)
         st.markdown("### 🤖 ให้ AI วิเคราะห์ข่าว + กราฟ")
         provider = st.radio("เลือก AI", ["🔘 Gemini (ฟรี)", "🔘 Claude (พรีเมียม)"], horizontal=True, label_visibility="collapsed")
@@ -356,10 +349,7 @@ def view_detail():
                     try:
                         res = call_gemini_api(prompt, api_key) if is_gemini else call_claude_api(prompt, api_key)
                         st.success("เสร็จสิ้น!")
-                        
-                        # ใช้กล่อง info ของ Streamlit ตัวอักษรอ่านง่ายแน่นอน
                         st.info(res)
-                        
                         if news:
                             with st.expander("ดูรายการข่าวที่ AI อ่าน"):
                                 for n in news: st.write(f"- {n['title']} ({n['source']})")
@@ -379,7 +369,7 @@ if st.session_state.view == "login":
             st.session_state.logged_in = True
             st.session_state.view = "manual"
             st.rerun()
-    if st.button("ข้ามการล็อคอิน (ใช้ข้อมูลจำลอง/YFinance)", use_container_width=True):
+    if st.button("ข้ามการล็อคอิน (ใช้ข้อมูลจำลอง)", use_container_width=True):
         st.session_state.view = "manual"
         st.rerun()
 elif st.session_state.view == "manual": view_manual()
