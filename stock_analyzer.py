@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 import time
 from datetime import datetime
+import os
+import platform
 
 # ==========================================
 # 1. จัดการการนำเข้าไลบรารี (Library Imports)
@@ -16,6 +18,7 @@ except ImportError:
 
 try:
     from settrade_v2 import Investor
+    from settrade_v2.errors import SettradeError
     ST_OK = True
 except ImportError:
     ST_OK = False
@@ -234,7 +237,7 @@ MARKETS = {
             ("CHG","ชัยพัฒนา"),("RJH","รามาธิบดี"),
             ("SCC","ปูนซิเมนต์ไทย"),("PTTGC","พีทีที โกลบอล"),
             ("SCCC","ซิเมนต์ไทย"),("TPIPL","TPI โพลีน"),
-            ("MTC","เมืองไทย แคปปิตอล"),("TIDLOR","ไทยเดินทาง"),
+            ("MTC","เมืองไทย แคปปิตอล"),("TIDLOR","ติดล้อ"),
             ("SAWAD","ศรีสวัสดิ์"),("AEONTS","อิออน"),
             ("MFEC","MFEC"),("BE8","เบริล 8"),("BBIK","บลูบิค"),
         ],
@@ -857,8 +860,29 @@ def build_ai_prompt(symbol, company_name, market, context_text):
 ⚡ หมายเหตุ: นี่คือการวิเคราะห์เพื่อการศึกษาเท่านั้น ไม่ใช่คำแนะนำการลงทุน"""
 
 # ==========================================
-# 10. ระบบแสดงผล AI UI (AI Tab & Settings)
+# 10. ระบบจัดการ Config & AI UI (AI Tab & Settings)
 # ==========================================
+def auto_set_environment(is_real_account):
+    """
+    ฟังก์ชันสลับโหมดพอร์ตจริง (prod) และ Sandbox (uat) อัตโนมัติ
+    อ้างอิงตามเอกสาร Settrade SDK V2 Installation
+    """
+    env_mode = "prod" if is_real_account else "uat"
+    user_home = os.path.expanduser("~")
+    
+    if platform.system() == "Windows":
+        config_path = os.path.join(user_home, "AppData", "settradesdkv2_config.txt")
+    else:
+        config_path = os.path.join(user_home, "settradesdkv2_config.txt")
+    
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(f"environment={env_mode}\n")
+            f.write("clear_log=30\n")
+        print(f"🔧 อัปเดตไฟล์ Config แล้ว: {config_path} เป็น {env_mode}")
+    except Exception as e:
+        print(f"⚠️ ไม่สามารถอัปเดตไฟล์ Config ได้: {e}")
+
 def render_ai_settings_sidebar():
     with st.sidebar:
         st.markdown("### 🤖 AI วิเคราะห์หุ้น")
@@ -994,7 +1018,7 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
 def render_header():
     render_ai_settings_sidebar()
     if st.session_state.logged_in:
-        badge = '<span style="background:rgba(0,184,148,.15);border:1px solid rgba(0,184,148,.4);color:#00b894;font-size:.65rem;font-weight:700;padding:3px 8px;border-radius:8px;">Settrade Live</span>'
+        badge = '<span style="background:rgba(0,184,148,.15);border:1px solid rgba(0,184,148,.4);color:#00b894;font-size:.65rem;font-weight:700;padding:3px 8px;border-radius:8px;">Settrade Connected</span>'
     else:
         badge = '<span style="background:rgba(253,203,110,.1);border:1px solid rgba(253,203,110,.4);color:#fdcb6e;font-size:.65rem;font-weight:700;padding:3px 8px;border-radius:8px;">ยังไม่ได้ Login</span>'
     st.markdown(
@@ -1318,6 +1342,7 @@ def view_login():
         broker_id  = st.text_input("BROKER_ID (รหัสโบรกเกอร์)", value=st.session_state.prefill_broker, placeholder="เช่น 004 หรือ SANDBOX")
         
         st.markdown("---")
+        is_real_account = st.checkbox("🚀 ใช้พอร์ตจริง (Production Mode / รับราคา Real-time)", value=False)
         show_debug = st.checkbox("แสดง debug log (สำหรับนักพัฒนา)", value=False)
         
         submitted  = st.form_submit_button("🔌 เชื่อมต่อ Settrade", use_container_width=True)
@@ -1328,9 +1353,12 @@ def view_login():
         elif not app_id.strip() or not app_secret.strip():
             st.markdown('<div class="err-box">กรุณากรอก APP_ID และ APP_SECRET ให้ครบถ้วนครับ</div>', unsafe_allow_html=True)
         else:
-            with st.spinner("กำลังเชื่อมต่อ Settrade (ระบบจะเลือก Real/Sandbox อัตโนมัติจาก Broker ID)..."):
+            with st.spinner("กำลังเชื่อมต่อ Settrade (ระบบจะสลับ Config อัตโนมัติ)..."):
+                
+                # 🌟 เรียกใช้ฟังก์ชันสลับ Config อัตโนมัติก่อนเลย
+                auto_set_environment(is_real_account)
+                
                 try:
-                    # เชื่อมต่อ Settrade โดยไม่ใช้ is_sandbox (ให้ Settrade ตรวจสอบอัตโนมัติ)
                     try:
                         inv = Investor(
                             app_id=app_id.strip(),
@@ -1369,6 +1397,8 @@ def view_login():
                     else:
                         raise ValueError("API ตอบสนองแต่ไม่มีข้อมูล โปรดตรวจสอบ API Keys หรือรหัส Broker อีกครั้งครับ")
 
+                except SettradeError as e:
+                    st.markdown(f'<div class="err-box"><strong>❌ Settrade API Error [{e.code}]</strong><br>Status Code: {e.status_code}<br>รายละเอียด: {e}</div>', unsafe_allow_html=True)
                 except Exception as e:
                     st.markdown(f'<div class="err-box"><strong>เชื่อมต่อไม่สำเร็จ</strong><br>{str(e)}</div>', unsafe_allow_html=True)
                     
@@ -1458,65 +1488,4 @@ def view_manual():
     if submitted and sym_input.strip():
         sym = sym_input.strip().upper()
         mkt_map = {"SET - ไทย":"SET","US - สหรัฐ":"US","CN - จีน":"CN"}
-        mkt_key = mkt_map[mkt_sel]
-        p = get_params()
-        with st.spinner("กำลังดึงข้อมูล " + sym + "..."):
-            try:
-                df, info = get_data(sym, mkt_key)
-                I = compute_indicators(df, p); S = score_stock(I, p)
-                yf_inf = info.get("yf") if info.get("source") == "yfinance" else None
-                render_params()
-                render_deep(sym, mkt_key, I, S, info, yf_info=yf_inf)
-            except Exception as e:
-                st.markdown('<div class="err-box">ดึงข้อมูลไม่ได้: ' + str(e) + '</div>', unsafe_allow_html=True)
-    else:
-        render_params()
-
-def view_detail():
-    render_header()
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("กลับรายการหุ้น", use_container_width=True):
-            st.session_state.view = "scan"; st.rerun()
-    with c2:
-        if st.button("ค้นหาหุ้นอื่น", use_container_width=True):
-            st.session_state.view = "manual"; st.rerun()
-            
-    sym = st.session_state.detail_sym; mkt_key = st.session_state.detail_mkt
-    p = get_params()
-    cached = st.session_state.scan_results.get(mkt_key)
-    
-    if cached is not None and sym in cached["Symbol"].values:
-        row = cached[cached["Symbol"]==sym].iloc[0]
-        I = row["_I"]; S = row["_S"]; info = row.get("_info", {"source":"mock"})
-        yf_inf = None
-        if YF_OK and mkt_key != "SET":
-            try: _, yf_inf = fetch_yfinance(sym)
-            except Exception: pass
-    else:
-        with st.spinner("กำลังดึงข้อมูล " + sym + "..."):
-            df, info = get_data(sym, mkt_key)
-            I = compute_indicators(df, p); S = score_stock(I, p)
-            yf_inf = info.get("yf")
-            
-    render_params()
-    render_deep(sym, mkt_key, I, S, info, yf_info=yf_inf)
-
-    st.markdown('<div class="sec-title" style="margin-top:18px;">🤖 AI วิเคราะห์</div>', unsafe_allow_html=True)
-    ai_company = dict(MARKETS.get(mkt_key,{}).get("stocks",[])).get(sym, sym)
-    render_ai_tab(sym, ai_company, mkt_key, I, S)
-
-# ==========================================
-# 13. ระบบ Router หลัก (App Entry Point)
-# ==========================================
-view = st.session_state.view
-if view == "login":
-    view_login()
-elif view == "scan":
-    view_scan()
-elif view == "manual":
-    view_manual()
-elif view == "detail":
-    view_detail()
-
-st.markdown('<div style="text-align:center;padding:20px 0 10px;color:#2a2a4a;font-size:.68rem;">ใช้เพื่อการศึกษาและการเขียนโปรแกรมเท่านั้น · ไม่ใช่คำแนะนำการลงทุนนะครับ</div>', unsafe_allow_html=True)
+        mkt_key = mkt_map[mkt_
