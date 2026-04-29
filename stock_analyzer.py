@@ -996,12 +996,16 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
             disabled=not api_key,
             key=f"_run_{s}",
         ):
-            if not api_key:
+           if not api_key:
                 st.error("❌ ไม่พบ API Key — กรุณาใส่ใหม่")
             else:
                 rcn = ck_name
-                if is_c: st.session_state[KC] = api_key
-                else: st.session_state[KG] = api_key
+                
+                # บันทึก Key ลงตัวแปรหลัก เพื่อให้เมนูแถบซ้ายมือเปลี่ยนเป็นสีเขียว "✓ พร้อม"
+                if is_c: 
+                    st.session_state["aikey_claude"] = api_key
+                else: 
+                    st.session_state["aikey_gemini"] = api_key
 
                 news = []
                 with st.spinner(f"🌐 ค้นหาข่าว {sym}..."):
