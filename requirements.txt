@@ -1,4 +1,7 @@
 streamlit
 pandas
 numpy
+pandas-ta
 settrade-v2
+yfinance
+plotly
