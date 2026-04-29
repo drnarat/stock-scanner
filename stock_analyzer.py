@@ -5,6 +5,9 @@ import numpy as np
 import time
 from datetime import datetime
 
+# ==========================================
+# 1. จัดการการนำเข้าไลบรารี (Library Imports)
+# ==========================================
 try:
     import pandas_ta as ta
     TA_OK = True
@@ -35,9 +38,9 @@ try:
 except ImportError:
     YF_OK = False
 
-# ---------------------------------------------------------------
-# PAGE CONFIG
-# ---------------------------------------------------------------
+# ==========================================
+# 2. ตั้งค่าหน้าเว็บและ CSS (Page Config & Styling)
+# ==========================================
 st.set_page_config(
     page_title="Stock Scanner Pro",
     page_icon=":chart_with_upwards_trend:",
@@ -45,9 +48,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ---------------------------------------------------------------
-# CSS — Warm Dark Theme
-# ---------------------------------------------------------------
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap');
@@ -206,9 +206,9 @@ div[data-testid="stSlider"] div[data-testid="stTickBarMin"],div[data-testid="stS
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------------------------------------------------------
-# STOCK UNIVERSE
-# ---------------------------------------------------------------
+# ==========================================
+# 3. ฐานข้อมูลหุ้น (Stock Universe)
+# ==========================================
 MARKETS = {
     "SET": {
         "flag": "TH", "name": "ตลาดหุ้นไทย", "desc": "SET50/100/mai",
@@ -235,8 +235,8 @@ MARKETS = {
             ("SCC","ปูนซิเมนต์ไทย"),("PTTGC","พีทีที โกลบอล"),
             ("SCCC","ซิเมนต์ไทย"),("TPIPL","TPI โพลีน"),
             ("MTC","เมืองไทย แคปปิตอล"),("TIDLOR","ไทยเดินทาง"),
-            ("SAWAD","ศาวะดี"),("AEONTS","อิออน"),
-            ("MFEC","MFEC"),("BE8","บี8"),("BBIK","บีบิก"),
+            ("SAWAD","ศรีสวัสดิ์"),("AEONTS","อิออน"),
+            ("MFEC","MFEC"),("BE8","เบริล 8"),("BBIK","บลูบิค"),
         ],
     },
     "US": {
@@ -261,9 +261,9 @@ MARKETS = {
     },
 }
 
-# ---------------------------------------------------------------
-# SESSION STATE
-# ---------------------------------------------------------------
+# ==========================================
+# 4. จัดการสถานะระบบ (Session State)
+# ==========================================
 for k, v in [
     ("logged_in", False), ("market_api", None), ("realtime_api", None),
     ("market", None), ("scan_results", {}), ("view", "login"),
@@ -276,9 +276,9 @@ for k, v in [
     if k not in st.session_state:
         st.session_state[k] = v
 
-# ---------------------------------------------------------------
-# INDICATORS
-# ---------------------------------------------------------------
+# ==========================================
+# 5. การคำนวณอินดิเคเตอร์ (Indicators & Scoring)
+# ==========================================
 def _safe(s, fallback=0.0):
     try:
         v = s.iloc[-1] if hasattr(s, "iloc") else s
@@ -462,9 +462,9 @@ def score_stock(I, p):
     return dict(sc=sc, rec=rec, cls=cls, bs=bs, ss=ss, ns=ns,
                 entry=entry, t1=t1, t2=t2, sl=sl, up=up, dn=dn, rr=rr)
 
-# ---------------------------------------------------------------
-# DATA FETCH
-# ---------------------------------------------------------------
+# ==========================================
+# 6. การดึงข้อมูล API (Data Fetching)
+# ==========================================
 def inspect_settrade_api():
     api = st.session_state.market_api
     rt  = st.session_state.realtime_api
@@ -673,9 +673,9 @@ def get_data(symbol, mkt_key):
     info["source"] = "mock"
     return df, info
 
-# ---------------------------------------------------------------
-# DEFAULT PARAMS
-# ---------------------------------------------------------------
+# ==========================================
+# 7. พารามิเตอร์เริ่มต้น (Default Parameters)
+# ==========================================
 DEF = dict(
     sma_s=10, sma_m=25, sma_l=75, ema_f=12, ema_s=26,
     rsi_p=14, rsi_ob=68, rsi_os=35,
@@ -689,14 +689,9 @@ DEF = dict(
 def get_params():
     return {k: st.session_state.get("p_"+k, v) for k, v in DEF.items()}
 
-# ---------------------------------------------------------------
-# WEB SEARCH
-# ---------------------------------------------------------------
-import urllib.request as _ureq
-import urllib.parse as _uparse
-import json as _json_mod
-import ssl as _ssl
-
+# ==========================================
+# 8. ค้นหาข่าวเพื่อส่งให้ AI (Web Search)
+# ==========================================
 def _http_get(url, headers=None, timeout=12):
     req = _ureq.Request(url, headers=headers or {
         "User-Agent": "Mozilla/5.0 StockScannerBot/1.0"
@@ -798,9 +793,9 @@ R/R: 1:{S['rr']:.2f}
 
     return tech_summary + news_text, news_items
 
-# ---------------------------------------------------------------
-# AI ANALYSIS
-# ---------------------------------------------------------------
+# ==========================================
+# 9. เชื่อมต่อ AI API (Claude & Gemini)
+# ==========================================
 def call_claude_api(prompt, api_key):
     url = "https://api.anthropic.com/v1/messages"
     payload = _json_mod.dumps({
@@ -861,6 +856,9 @@ def build_ai_prompt(symbol, company_name, market, context_text):
 
 ⚡ หมายเหตุ: นี่คือการวิเคราะห์เพื่อการศึกษาเท่านั้น ไม่ใช่คำแนะนำการลงทุน"""
 
+# ==========================================
+# 10. ระบบแสดงผล AI UI (AI Tab & Settings)
+# ==========================================
 def render_ai_settings_sidebar():
     with st.sidebar:
         st.markdown("### 🤖 AI วิเคราะห์หุ้น")
@@ -892,9 +890,6 @@ def render_ai_settings_sidebar():
                 st.session_state["show_inspector"] = not st.session_state.get("show_inspector", False)
                 st.rerun()
 
-# ---------------------------------------------------------------
-# RENDER AI ANALYSIS TAB
-# ---------------------------------------------------------------
 def render_ai_tab(sym, company_name, mkt_key, I, S):
     s  = "".join(c for c in sym if c.isalnum())
     KC = f"_kc_{s}"
@@ -927,7 +922,6 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
     if not api_key:
         st.caption(f"🔑 รับฟรีที่ {link}")
 
-    # ── Cache & Execute ──────────────────────────────────────────────────
     ck_name = f"{sym}_{mkt_key}_{prov}"
     cached  = st.session_state.ai_analysis_cache.get(ck_name)
 
@@ -954,7 +948,7 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
                 st.session_state.ai_analysis_cache = {}
                 st.rerun()
     else:
-        # ── ปุ่มวิเคราะห์ และ Execute (ทำงานร่วมกัน) ─────────────────────────────────
+        # ปุ่ม AI แบบใหม่ ที่ไม่เด้งหายเวลาวิเคราะห์
         if st.button(
             f"🚀 วิเคราะห์ {sym} ด้วย {plabel}",
             use_container_width=True,
@@ -965,7 +959,6 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
                 st.error("❌ ไม่พบ API Key — กรุณาใส่ใหม่")
             else:
                 rcn = ck_name
-                # บันทึก key ลง session ป้องกันการหายเมื่อรีเฟรช
                 if is_c: st.session_state[KC] = api_key
                 else: st.session_state[KG] = api_key
 
@@ -980,29 +973,24 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
                 with st.spinner(f"🤖 {plabel} กำลังวิเคราะห์..."):
                     try:
                         prompt = build_ai_prompt(sym, company_name, mkt_key, ctx)
-
-                        if prov == "claude":
-                            result = call_claude_api(prompt, api_key)
-                        else:
-                            result = call_gemini_api(prompt, api_key)
+                        if prov == "claude": result = call_claude_api(prompt, api_key)
+                        else: result = call_gemini_api(prompt, api_key)
 
                         st.session_state.ai_analysis_cache[rcn] = {
                             "ts": datetime.now(), "text": result, "news": news,
                         }
                         st.rerun()
-
                     except Exception as e:
                         err = str(e)
                         h = "🔌 API Error"
                         if "401" in err or "invalid" in err.lower(): h = "❌ API Key ไม่ถูกต้อง"
                         elif "429" in err: h = "⏳ Rate limit — เรียกใช้งานถี่เกินไป"
                         elif "quota" in err.lower(): h = "💳 Quota หมด"
-
                         st.error(f"{h} : {err}")
 
-# ---------------------------------------------------------------
-# SHARED UI
-# ---------------------------------------------------------------
+# ==========================================
+# 11. โครงสร้างส่วนประกอบหน้าจอ (Shared UI)
+# ==========================================
 def render_header():
     render_ai_settings_sidebar()
     if st.session_state.logged_in:
@@ -1296,27 +1284,27 @@ def render_deep(sym, mkt_key, I, S, info, yf_info=None):
         else:
             st.info("ข้อมูลพื้นฐานใช้ได้กับหุ้น US/CN ผ่าน yfinance")
 
-# ---------------------------------------------------------------
-# VIEWS
-# ---------------------------------------------------------------
+# ==========================================
+# 12. หน้าจอต่างๆ (Views Routing)
+# ==========================================
 def view_login():
     render_header()
     st.markdown(
         '<div class="login-card"><h2>เชื่อมต่อ Settrade API</h2><div class="login-sub">'
-        'กรอก credential จาก <strong style="color:#6c63ff;">developer.settrade.com</strong><br>'
-        'สำหรับ SANDBOX ใช้ค่าด้านล่างได้เลย'
+        'กรอกข้อมูล API (APP_ID, SECRET, CODE, BROKER) เพื่อใช้งาน<br>'
+        '<strong>💡 เคล็ดลับ:</strong> หากต้องการใช้ทดสอบ (Sandbox) ให้กรอกคำว่า <code>SANDBOX</code> ที่ช่อง CODE และ BROKER'
         '</div></div>', unsafe_allow_html=True
     )
     col_sb1, col_sb2 = st.columns(2)
     with col_sb1:
-        if st.button("🧪 ใช้ค่า SANDBOX (ทดสอบ)", use_container_width=True):
+        if st.button("🧪 โหลดข้อมูลจำลอง (Sandbox Fill)", use_container_width=True):
             st.session_state.prefill_id     = "MPRZz1Hymo6nR50A"
             st.session_state.prefill_secret = "Te/3LKXBb+IM20T/ygcFAMWXjIgkadJ+o1cDstkjRDQ="
             st.session_state.prefill_code   = "SANDBOX"
             st.session_state.prefill_broker = "SANDBOX"
             st.rerun()
     with col_sb2:
-        if st.button("🗑 ล้างค่า", use_container_width=True):
+        if st.button("🗑 ล้างค่าฟอร์ม", use_container_width=True):
             st.session_state.prefill_id     = ""
             st.session_state.prefill_secret = ""
             st.session_state.prefill_code   = ""
@@ -1324,32 +1312,31 @@ def view_login():
             st.rerun()
     
     with st.form("login_form"):
-        app_id     = st.text_input("APP_ID", value=st.session_state.prefill_id)
-        app_secret = st.text_input("APP_SECRET", value=st.session_state.prefill_secret, type="password")
-        app_code   = st.text_input("APP_CODE", value=st.session_state.prefill_code)
-        broker_id  = st.text_input("BROKER_ID", value=st.session_state.prefill_broker)
+        app_id     = st.text_input("APP_ID", value=st.session_state.prefill_id, placeholder="เช่น XyZ123AbCdEfGhIj")
+        app_secret = st.text_input("APP_SECRET", value=st.session_state.prefill_secret, type="password", placeholder="พิมพ์หรือวาง Secret Key ของคุณ")
+        app_code   = st.text_input("APP_CODE (ชื่อแอพ)", value=st.session_state.prefill_code, placeholder="เช่น ALGO หรือ SANDBOX")
+        broker_id  = st.text_input("BROKER_ID (รหัสโบรกเกอร์)", value=st.session_state.prefill_broker, placeholder="เช่น 004 หรือ SANDBOX")
         
         st.markdown("---")
-        is_real_account = st.checkbox("🚀 ใช้พอร์ตจริง (Production Mode / รับราคา Real-time)", value=False)
-        show_debug = st.checkbox("แสดง debug log", value=False)
+        show_debug = st.checkbox("แสดง debug log (สำหรับนักพัฒนา)", value=False)
         
         submitted  = st.form_submit_button("🔌 เชื่อมต่อ Settrade", use_container_width=True)
     
     if submitted:
         if not ST_OK:
-            st.markdown('<div class="err-box">settrade_v2 ไม่ได้ติดตั้ง</div>', unsafe_allow_html=True)
+            st.markdown('<div class="err-box">settrade_v2 ไม่ได้ติดตั้ง กรุณารัน <code>pip install settrade-v2</code> ก่อนครับ</div>', unsafe_allow_html=True)
         elif not app_id.strip() or not app_secret.strip():
-            st.markdown('<div class="err-box">กรุณากรอก APP_ID และ APP_SECRET</div>', unsafe_allow_html=True)
+            st.markdown('<div class="err-box">กรุณากรอก APP_ID และ APP_SECRET ให้ครบถ้วนครับ</div>', unsafe_allow_html=True)
         else:
-            with st.spinner("กำลังเชื่อมต่อ Settrade..."):
+            with st.spinner("กำลังเชื่อมต่อ Settrade (ระบบจะเลือก Real/Sandbox อัตโนมัติจาก Broker ID)..."):
                 try:
+                    # เชื่อมต่อ Settrade โดยไม่ใช้ is_sandbox (ให้ Settrade ตรวจสอบอัตโนมัติ)
                     try:
                         inv = Investor(
                             app_id=app_id.strip(),
                             app_secret=app_secret.strip(),
                             app_code=app_code.strip(),
                             broker_id=broker_id.strip(),
-                            is_sandbox=not is_real_account,
                             is_auto_queue=False,
                         )
                     except TypeError:
@@ -1358,7 +1345,6 @@ def view_login():
                             app_secret=app_secret.strip(),
                             app_code=app_code.strip(),
                             broker_id=broker_id.strip(),
-                            is_sandbox=not is_real_account,
                         )
 
                     mkt_api = inv.MarketData()
@@ -1370,7 +1356,7 @@ def view_login():
                             break
                     if rt_api is None: rt_api = mkt_api
 
-                    # ทดสอบ connection ด้วย candlestick ของ PTT
+                    # ทดสอบ connection ด้วยการดึง candlestick
                     test = mkt_api.get_candlestick("PTT", interval="1d", limit=5)
                     connected = test is not None and len(test) > 0
 
@@ -1381,7 +1367,7 @@ def view_login():
                         st.session_state.view = "scan"
                         st.rerun()
                     else:
-                        raise ValueError("API ตอบสนองแต่ไม่มีข้อมูล (ลอง SANDBOX credentials)")
+                        raise ValueError("API ตอบสนองแต่ไม่มีข้อมูล โปรดตรวจสอบ API Keys หรือรหัส Broker อีกครั้งครับ")
 
                 except Exception as e:
                     st.markdown(f'<div class="err-box"><strong>เชื่อมต่อไม่สำเร็จ</strong><br>{str(e)}</div>', unsafe_allow_html=True)
@@ -1389,10 +1375,10 @@ def view_login():
     st.markdown("---")
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("ข้าม / Mock Data", use_container_width=True):
+        if st.button("ข้ามการล็อคอิน / Mock Data", use_container_width=True):
             st.session_state.view = "scan"; st.rerun()
     with c2:
-        if st.button("ข้าม / Yahoo Finance", use_container_width=True):
+        if st.button("ข้ามการล็อคอิน / Yahoo Finance", use_container_width=True):
             st.session_state.view = "scan"; st.rerun()
 
 def view_scan():
@@ -1401,7 +1387,7 @@ def view_scan():
     p = get_params()
     col_n1, col_n2 = st.columns([3, 1])
     with col_n2:
-        if st.button("วิเคราะห์หุ้น", use_container_width=True):
+        if st.button("วิเคราะห์หุ้นรายตัว", use_container_width=True):
             st.session_state.view = "manual"; st.rerun()
     st.markdown('<div class="sec-title">1 เลือกตลาดหุ้น</div>', unsafe_allow_html=True)
     mkt_cols = st.columns(3)
@@ -1418,13 +1404,13 @@ def view_scan():
     mkt = MARKETS[mkt_key]; cur = mkt["currency"]; n = len(mkt["stocks"])
     c1, c2 = st.columns(2)
     with c1: filt_sig = st.multiselect("สัญญาณ", ["🟢 ซื้อ","🟡 เฝ้าระวัง","⚪ ถือ","🔴 ขาย"], default=["🟢 ซื้อ","🟡 เฝ้าระวัง"], key="filt_sig", label_visibility="collapsed")
-    with c2: sort_by = st.selectbox("เรียง", ["Score","RSI","Change","ADX"], key="sort_by", label_visibility="collapsed")
+    with c2: sort_by = st.selectbox("เรียงตาม", ["Score","RSI","Change","ADX"], key="sort_by", label_visibility="collapsed")
     
     st.markdown('<div class="sec-title">2 สแกน</div>', unsafe_allow_html=True)
     if st.button("สแกน " + mkt["flag"] + " " + mkt_key + " (" + str(n) + " หุ้น)", use_container_width=True):
         results = []; prog = st.progress(0); stxt = st.empty()
         for i, (sym, name) in enumerate(mkt["stocks"]):
-            stxt.markdown('<div style="text-align:center;font-size:.75rem;color:#8892b0;">สแกน ' + sym + ' (' + str(i+1) + '/' + str(n) + ')</div>', unsafe_allow_html=True)
+            stxt.markdown('<div style="text-align:center;font-size:.75rem;color:#8892b0;">กำลังวิเคราะห์ ' + sym + ' (' + str(i+1) + '/' + str(n) + ')</div>', unsafe_allow_html=True)
             try:
                 df, info = get_data(sym, mkt_key)
                 I = compute_indicators(df, p); S = score_stock(I, p)
@@ -1443,7 +1429,7 @@ def view_scan():
     
     st.markdown('<div class="sec-title">3 ผลการสแกน</div>', unsafe_allow_html=True)
     if len(df_f) == 0:
-        st.info("ไม่มีหุ้นผ่านเงื่อนไข ลองปรับ Parameters")
+        st.info("ไม่มีหุ้นผ่านเงื่อนไข ลองปรับ Parameters ใหม่ได้เลยครับ")
         return
     for _, row in df_f.iterrows():
         st.markdown(
@@ -1454,7 +1440,7 @@ def view_scan():
             f'<div class="sring {"sh" if row["Score"]>=65 else "sm" if row["Score"]>=45 else "sl"}">{int(row["Score"])}</div></div></div>',
             unsafe_allow_html=True
         )
-        if st.button("วิเคราะห์ " + row["Symbol"] + " เจาะลึก", key="da_"+row["Symbol"]+"_"+mkt_key, use_container_width=True):
+        if st.button("เจาะลึก " + row["Symbol"], key="da_"+row["Symbol"]+"_"+mkt_key, use_container_width=True):
             st.session_state.detail_sym = row["Symbol"]
             st.session_state.detail_mkt = mkt_key
             st.session_state.view = "detail"
@@ -1493,7 +1479,7 @@ def view_detail():
         if st.button("กลับรายการหุ้น", use_container_width=True):
             st.session_state.view = "scan"; st.rerun()
     with c2:
-        if st.button("วิเคราะห์หุ้นอื่น", use_container_width=True):
+        if st.button("ค้นหาหุ้นอื่น", use_container_width=True):
             st.session_state.view = "manual"; st.rerun()
             
     sym = st.session_state.detail_sym; mkt_key = st.session_state.detail_mkt
@@ -1520,9 +1506,9 @@ def view_detail():
     ai_company = dict(MARKETS.get(mkt_key,{}).get("stocks",[])).get(sym, sym)
     render_ai_tab(sym, ai_company, mkt_key, I, S)
 
-# ---------------------------------------------------------------
-# ROUTER
-# ---------------------------------------------------------------
+# ==========================================
+# 13. ระบบ Router หลัก (App Entry Point)
+# ==========================================
 view = st.session_state.view
 if view == "login":
     view_login()
@@ -1533,4 +1519,4 @@ elif view == "manual":
 elif view == "detail":
     view_detail()
 
-st.markdown('<div style="text-align:center;padding:20px 0 10px;color:#2a2a4a;font-size:.68rem;">ใช้เพื่อการศึกษาเท่านั้น · ไม่ใช่คำแนะนำการลงทุน</div>', unsafe_allow_html=True)
+st.markdown('<div style="text-align:center;padding:20px 0 10px;color:#2a2a4a;font-size:.68rem;">ใช้เพื่อการศึกษาและการเขียนโปรแกรมเท่านั้น · ไม่ใช่คำแนะนำการลงทุนนะครับ</div>', unsafe_allow_html=True)
