@@ -27,7 +27,6 @@ except: PLOTLY_OK = False
 # ==========================================
 st.set_page_config(page_title="Stock Scanner Pro AI", page_icon="📈", layout="centered", initial_sidebar_state="collapsed")
 
-# 📌 ปรับ CSS ให้เป็นมิตรกับทั้ง Light Mode และ Dark Mode
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap');
@@ -92,6 +91,7 @@ def search_stock_news_one_month(symbol, company_name="", market="SET"):
         ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
         with urllib.request.urlopen(req, timeout=10, context=ctx) as r:
             items = re.findall(r'<item>(.*?)</item>', r.read().decode("utf-8", errors="replace"), re.DOTALL)
+            # จำกัด 3 ข่าว เพื่อประหยัดโควต้า AI และไม่ให้เกิน Limit
             for item in items[:3]:
                 title = re.search(r'<title>(.*?)</title>', item)
                 src = re.search(r'<source[^>]*>(.*?)</source>', item)
@@ -111,6 +111,7 @@ def call_gemini_api(prompt, api_key):
 
 def call_claude_api(prompt, api_key):
     url = "https://api.anthropic.com/v1/messages"
+    # อัปเดตรุ่นล่าสุด แก้ 404
     payload = _json.dumps({"model": "claude-3-5-haiku-20241022", "max_tokens": 1200, "messages": [{"role": "user", "content": prompt}]}).encode("utf-8")
     req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json", "x-api-key": api_key.strip(), "anthropic-version": "2023-06-01"})
     ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
@@ -120,7 +121,7 @@ def call_claude_api(prompt, api_key):
     except urllib.error.HTTPError as e: raise Exception(f"Claude Error: {e.read().decode('utf-8')}")
 
 # ==========================================
-# 5. ดึงข้อมูลและ Indicator
+# 5. ดึงข้อมูลและ Indicator เชิงลึก
 # ==========================================
 def fetch_mock(symbol, n=150):
     np.random.seed(abs(hash(symbol)) % 99999)
@@ -130,21 +131,33 @@ def fetch_mock(symbol, n=150):
     return pd.DataFrame({"open": c, "high": c*np.random.uniform(1.001, 1.02, n), "low": c*np.random.uniform(0.98, 0.999, n), "close": c, "volume": np.random.uniform(1e5, 5e6, n)}, index=dates)
 
 def get_data(symbol, mkt_key):
+    # --- 1. ลองดึงจาก Settrade (พอร์ตจริง/Sandbox) ---
     if st.session_state.logged_in and mkt_key == "SET":
         try:
+            # ล็อคเป้าใช้ "1d" (ตัวเล็ก) ตามมาตรฐานของ Settrade
             raw = st.session_state.market_api.get_candlestick(symbol, interval="1d", limit=150)
             df = pd.DataFrame(raw)
-            df.rename(columns={"last": "close", "vol": "volume"}, inplace=True)
-            return df[["open","high","low","close","volume"]].apply(pd.to_numeric)
-        except: pass
+            if not df.empty:
+                df.rename(columns={"last": "close", "vol": "volume"}, inplace=True)
+                return df[["open","high","low","close","volume"]].apply(pd.to_numeric)
+        except Exception:
+            pass # ถ้าดึงไม่ได้ให้ปล่อยผ่านเงียบๆ ไม่ต้องแสดง Error
+
+    # --- 2. แหล่งสำรอง: ดึงจาก Yahoo Finance (ข้อมูลจริง ฟรี ไม่ติด Error) ---
     if YF_OK:
         try:
-            df = yf.Ticker(symbol + ".BK" if mkt_key == "SET" else symbol).history(period="6mo")[["Open","High","Low","Close","Volume"]]
-            df.columns = ["open","high","low","close","volume"]
-            return df.dropna()
-        except: pass
+            yf_sym = symbol + ".BK" if mkt_key == "SET" else symbol
+            df = yf.Ticker(yf_sym).history(period="6mo")[["Open","High","Low","Close","Volume"]]
+            if not df.empty:
+                df.columns = ["open","high","low","close","volume"]
+                return df.dropna()
+        except Exception: 
+            pass
+
+    # --- 3. ไม้ตายสุดท้าย: กราฟจำลอง (เพื่อให้แอปไม่พัง) ---
     return fetch_mock(symbol)
 
+# ฟังก์ชันดึงค่าปลอดภัย ป้องกัน Error: cannot convert the series to float
 def _safe(s, fallback=0.0):
     try:
         v = s.iloc[-1] if hasattr(s, "iloc") else s
@@ -299,6 +312,7 @@ def view_detail():
             
             st.markdown("<br>", unsafe_allow_html=True)
             
+            # ตารางอินดิเคเตอร์ 15 ตัว
             st.markdown(
                 f'<div class="ind-grid">'
                 f'<div class="ibox"><div class="ilabel">RSI (14)</div><div class="ival" style="color:{"#dc2626" if I["rsi"]>70 else "#059669" if I["rsi"]<35 else "inherit"};">{I["rsi"]:.1f}</div></div>'
@@ -322,6 +336,7 @@ def view_detail():
                 f'</div>', unsafe_allow_html=True
             )
 
+        # ส่วนประมวลผล AI 
         st.markdown('<div class="da-hdr" style="margin-top:20px;">', unsafe_allow_html=True)
         st.markdown("### 🤖 ให้ AI วิเคราะห์ข่าว + กราฟ")
         provider = st.radio("เลือก AI", ["🔘 Gemini (ฟรี)", "🔘 Claude (พรีเมียม)"], horizontal=True, label_visibility="collapsed")
@@ -342,8 +357,8 @@ def view_detail():
                         res = call_gemini_api(prompt, api_key) if is_gemini else call_claude_api(prompt, api_key)
                         st.success("เสร็จสิ้น!")
                         
-                        # 📌 จุดที่แก้เรื่องกล่องดำ: เปลี่ยนเป็น st.info แบบมาตรฐานของ Streamlit ตัวหนังสือไม่ดำแน่นอน!
-                        st.markdown(f'<div style="background-color: rgba(124, 106, 240, 0.1); color: inherit; padding: 20px; border-radius: 10px; border-left: 5px solid #7c6af0;">{res}</div>', unsafe_allow_html=True)
+                        # ใช้กล่อง info ของ Streamlit ตัวอักษรอ่านง่ายแน่นอน
+                        st.info(res)
                         
                         if news:
                             with st.expander("ดูรายการข่าวที่ AI อ่าน"):
