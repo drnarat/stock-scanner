@@ -41,6 +41,13 @@ try:
 except ImportError:
     YF_OK = False
 
+try:
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    PLOTLY_OK = True
+except ImportError:
+    PLOTLY_OK = False
+
 # ==========================================
 # 2. ตั้งค่าหน้าเว็บและ CSS (Page Config & Styling)
 # ==========================================
@@ -517,13 +524,11 @@ def _parse_price_from_row(row):
     if not isinstance(row, dict): 
         return None
 
-    # ทะลวงชั้น JSON ถ้า Settrade ห่อข้อมูลมา
     for nested_key in ["security", "data", "result", "quoteInfo", "quote"]:
         if nested_key in row and isinstance(row[nested_key], dict):
             row = row[nested_key]
             break
 
-    # ค้นหา Key ราคา
     for k in ["last","Last","close","Close","c","price","Price",
               "LastPrice","last_price","market_price","current"]:
         v = row.get(k)
@@ -543,6 +548,16 @@ def _rows_to_df(raw):
     df = pd.DataFrame(raw if isinstance(raw, list) else [raw])
     if df.empty:
         return None
+    
+    # ถ้ามี column time ให้แปลงเป็น datetime เผื่อไว้ใช้กับ Plotly
+    if "time" in df.columns:
+        try:
+            # Settrade มักส่งเวลามาเป็น Unix timestamp (วินาที)
+            df["time"] = pd.to_datetime(df["time"], unit="s") + pd.Timedelta(hours=7)
+            df.set_index("time", inplace=True)
+        except Exception:
+            pass
+
     rename = {}
     for c in df.columns:
         cl = c.lower()
@@ -557,8 +572,12 @@ def _rows_to_df(raw):
             df[col] = df[fallback] if fallback else 1_000_000
     if "close" not in df.columns:
         return None
-    df = df[["open","high","low","close","volume"]].apply(pd.to_numeric, errors="coerce").dropna()
-    return df if len(df) >= 2 else None
+    
+    # เก็บ index ไว้
+    idx = df.index
+    df = df[["open","high","low","close","volume"]].apply(pd.to_numeric, errors="coerce")
+    df.index = idx
+    return df.dropna() if len(df) >= 2 else None
 
 def _try_candlestick(symbol, intervals, limit=200):
     api = st.session_state.market_api
@@ -635,7 +654,10 @@ def fetch_mock(symbol, n=200):
     h  = c * np.random.uniform(1.001, 1.025, n)
     lo = c * np.random.uniform(0.975, 0.999, n)
     v  = np.random.uniform(3e5, 8e6, n).astype(int)
-    return pd.DataFrame({"open": c, "high": h, "low": lo, "close": c, "volume": v})
+    # Mock data with dummy dates
+    dates = pd.date_range(end=pd.Timestamp.today(), periods=n)
+    df = pd.DataFrame({"open": c, "high": h, "low": lo, "close": c, "volume": v}, index=dates)
+    return df
 
 def get_data(symbol, mkt_key):
     info = {}
@@ -863,10 +885,6 @@ def build_ai_prompt(symbol, company_name, market, context_text):
 # 10. ระบบจัดการ Config & AI UI (AI Tab & Settings)
 # ==========================================
 def auto_set_environment(is_real_account):
-    """
-    ฟังก์ชันสลับโหมดพอร์ตจริง (prod) และ Sandbox (uat) อัตโนมัติ
-    อ้างอิงตามเอกสาร Settrade SDK V2 Installation
-    """
     env_mode = "prod" if is_real_account else "uat"
     user_home = os.path.expanduser("~")
     
@@ -1012,8 +1030,55 @@ def render_ai_tab(sym, company_name, mkt_key, I, S):
                         st.error(f"{h} : {err}")
 
 # ==========================================
-# 11. โครงสร้างส่วนประกอบหน้าจอ (Shared UI)
+# 11. โครงสร้างส่วนประกอบหน้าจอ (Shared UI & Charts)
 # ==========================================
+def render_interactive_chart(df, sym):
+    """
+    ฟังก์ชันสำหรับวาดกราฟแท่งเทียนแบบโต้ตอบ (Interactive) ด้วย Plotly
+    """
+    try:
+        # สร้าง Subplot: ด้านบนเป็นราคา ด้านล่างเป็น Volume
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
+                            vertical_spacing=0.03, subplot_titles=(f"{sym} Price Action", 'Volume'), 
+                            row_width=[0.2, 0.7])
+
+        # ถ้า df.index เป็น datetime ให้ใช้เลย ถ้าไม่ใช่ก็สร้าง Range เปล่าๆ ป้องกัน Error
+        x_data = df.index if isinstance(df.index, pd.DatetimeIndex) else np.arange(len(df))
+        
+        # 1. กราฟแท่งเทียน (Candlestick)
+        fig.add_trace(go.Candlestick(x=x_data,
+                                     open=df['open'], high=df['high'],
+                                     low=df['low'], close=df['close'],
+                                     name='Price'), row=1, col=1)
+                                     
+        # 2. เส้นค่าเฉลี่ย (SMA)
+        fig.add_trace(go.Scatter(x=x_data, y=df['close'].rolling(10).mean(), 
+                                 line=dict(color='orange', width=1.5), name='SMA 10'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=x_data, y=df['close'].rolling(25).mean(), 
+                                 line=dict(color='#22d3ee', width=1.5), name='SMA 25'), row=1, col=1)
+
+        # 3. กราฟ Volume
+        colors = ['#34d399' if c >= o else '#f87171' for o, c in zip(df['open'], df['close'])]
+        fig.add_trace(go.Bar(x=x_data, y=df['volume'], marker_color=colors, name='Volume'), row=2, col=1)
+
+        # ตั้งค่ากราฟ Theme สีมืด
+        fig.update_layout(
+            template='plotly_dark',
+            plot_bgcolor='#18181c',
+            paper_bgcolor='#18181c',
+            margin=dict(l=10, r=10, t=40, b=20),
+            xaxis_rangeslider_visible=False,
+            height=450,
+            showlegend=False
+        )
+        fig.update_xaxes(showgrid=False, zeroline=False)
+        fig.update_yaxes(showgrid=True, gridcolor='#3a3a46', zeroline=False)
+        
+        # นำไปแสดงบน Streamlit
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.warning(f"⚠️ ไม่สามารถสร้างกราฟได้: {e}")
+
 def render_header():
     render_ai_settings_sidebar()
     if st.session_state.logged_in:
@@ -1087,7 +1152,7 @@ def render_params():
         with c4: st.slider("R/R ขั้นต่ำ", 0.5, 5.0, float(DEF["min_rr"]), step=0.1, key="p_min_rr")
         with c5: st.slider("ADX ขั้นต่ำ", 0, 40, DEF["min_adx"], key="p_min_adx")
 
-def render_deep(sym, mkt_key, I, S, info, yf_info=None):
+def render_deep(sym, mkt_key, df, I, S, info, yf_info=None):
     p = get_params()
     mkt = MARKETS.get(mkt_key, {"flag":"?","name":"Custom","currency":"","tag":"tus"})
     cur = mkt["currency"]
@@ -1175,6 +1240,13 @@ def render_deep(sym, mkt_key, I, S, info, yf_info=None):
         '</div>',
         unsafe_allow_html=True
     )
+    
+    # วาดกราฟ Plotly Interactive
+    if PLOTLY_OK and df is not None and not df.empty:
+        st.markdown('<div class="sec-title">📊 กราฟเทคนิค (Interactive Chart)</div>', unsafe_allow_html=True)
+        render_interactive_chart(df, sym)
+    elif not PLOTLY_OK:
+        st.info("💡 หากต้องการเปิดใช้งานกราฟ Interactive โปรดติดตั้ง: `pip install plotly`")
 
     if info.get("source") in ("settrade_daily","settrade") and st.session_state.get("logged_in"):
         with st.expander("🔍 Debug ราคา — กดเพื่อดู raw API response", expanded=False):
@@ -1312,6 +1384,22 @@ def render_deep(sym, mkt_key, I, S, info, yf_info=None):
 # ==========================================
 def view_login():
     render_header()
+    
+    # ตรวจสอบว่าโหลด Library ครบไหม เพื่อโชว์แจ้งเตือน
+    lib_warn_list = []
+    if not ST_OK: lib_warn_list.append("settrade-v2")
+    if not TA_OK: lib_warn_list.append("pandas_ta")
+    if not YF_OK: lib_warn_list.append("yfinance")
+    if not PLOTLY_OK: lib_warn_list.append("plotly")
+    lib_warn = "pip install " + " ".join(lib_warn_list) if lib_warn_list else ""
+    
+    if lib_warn:
+        st.markdown(
+            f'<div class="err-box">⚠️ <strong>พบ Library ที่ยังไม่ได้ติดตั้ง:</strong><br>'
+            f'โปรดรันคำสั่ง <code>{lib_warn}</code> ก่อนใช้งานครับ</div>', 
+            unsafe_allow_html=True
+        )
+
     st.markdown(
         '<div class="login-card"><h2>เชื่อมต่อ Settrade API</h2><div class="login-sub">'
         'กรอกข้อมูล API (APP_ID, SECRET, CODE, BROKER) เพื่อใช้งาน<br>'
@@ -1338,7 +1426,7 @@ def view_login():
         app_id     = st.text_input("APP_ID", value=st.session_state.prefill_id, placeholder="เช่น XyZ123AbCdEfGhIj")
         app_secret = st.text_input("APP_SECRET", value=st.session_state.prefill_secret, type="password", placeholder="พิมพ์หรือวาง Secret Key ของคุณ")
         app_code   = st.text_input("APP_CODE (ชื่อแอพ)", value=st.session_state.prefill_code, placeholder="เช่น ALGO หรือ SANDBOX")
-        broker_id  = st.text_input("BROKER_ID (รหัสโบรกเกอร์)", value=st.session_state.prefill_broker, placeholder="เช่น 004 หรือ SANDBOX")
+        broker_id  = st.text_input("BROKER_ID (รหัสโบรกเกอร์)", value=st.session_state.prefill_broker, placeholder="เช่น 022 หรือ SANDBOX")
         
         st.markdown("---")
         is_real_account = st.checkbox("🚀 ใช้พอร์ตจริง (Production Mode / รับราคา Real-time)", value=False)
@@ -1354,7 +1442,6 @@ def view_login():
         else:
             with st.spinner("กำลังเชื่อมต่อ Settrade (ระบบจะสลับ Config อัตโนมัติ)..."):
                 
-                # 🌟 เรียกใช้ฟังก์ชันสลับ Config อัตโนมัติก่อนเลย
                 auto_set_environment(is_real_account)
                 
                 try:
@@ -1383,7 +1470,6 @@ def view_login():
                             break
                     if rt_api is None: rt_api = mkt_api
 
-                    # ทดสอบ connection ด้วยการดึง candlestick
                     test = mkt_api.get_candlestick("PTT", interval="1d", limit=5)
                     connected = test is not None and len(test) > 0
 
@@ -1495,7 +1581,7 @@ def view_manual():
                 I = compute_indicators(df, p); S = score_stock(I, p)
                 yf_inf = info.get("yf") if info.get("source") == "yfinance" else None
                 render_params()
-                render_deep(sym, mkt_key, I, S, info, yf_info=yf_inf)
+                render_deep(sym, mkt_key, df, I, S, info, yf_info=yf_inf)
             except Exception as e:
                 st.markdown('<div class="err-box">ดึงข้อมูลไม่ได้: ' + str(e) + '</div>', unsafe_allow_html=True)
     else:
@@ -1513,23 +1599,15 @@ def view_detail():
             
     sym = st.session_state.detail_sym; mkt_key = st.session_state.detail_mkt
     p = get_params()
-    cached = st.session_state.scan_results.get(mkt_key)
     
-    if cached is not None and sym in cached["Symbol"].values:
-        row = cached[cached["Symbol"]==sym].iloc[0]
-        I = row["_I"]; S = row["_S"]; info = row.get("_info", {"source":"mock"})
-        yf_inf = None
-        if YF_OK and mkt_key != "SET":
-            try: _, yf_inf = fetch_yfinance(sym)
-            except Exception: pass
-    else:
-        with st.spinner("กำลังดึงข้อมูล " + sym + "..."):
-            df, info = get_data(sym, mkt_key)
-            I = compute_indicators(df, p); S = score_stock(I, p)
-            yf_inf = info.get("yf")
+    # ดึงข้อมูลจาก API ใหม่เสมอเพื่อความชัวร์ จะได้มี DataFrame ไปสร้างกราฟ
+    with st.spinner("กำลังดึงข้อมูลอัปเดต " + sym + "..."):
+        df, info = get_data(sym, mkt_key)
+        I = compute_indicators(df, p); S = score_stock(I, p)
+        yf_inf = info.get("yf")
             
     render_params()
-    render_deep(sym, mkt_key, I, S, info, yf_info=yf_inf)
+    render_deep(sym, mkt_key, df, I, S, info, yf_info=yf_inf)
 
     st.markdown('<div class="sec-title" style="margin-top:18px;">🤖 AI วิเคราะห์</div>', unsafe_allow_html=True)
     ai_company = dict(MARKETS.get(mkt_key,{}).get("stocks",[])).get(sym, sym)
